@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, stat } from 'fs/promises';
-import path from 'path';
+import { getImage } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,27 +9,20 @@ export async function GET(
 ) {
   const { imageId } = await params;
 
-  // Sanitize imageId to prevent directory traversal
-  const safeId = imageId.replace(/[^a-zA-Z0-9_-]/g, '');
+  // On Vercel Blob, images are served directly from the blob URL — no need for this endpoint
+  // This is only used in local dev mode
 
-  const filePath = path.join(process.cwd(), 'generated-images', `${safeId}.jpg`);
+  const buffer = await getImage(imageId);
 
-  try {
-    const fileStat = await stat(filePath);
-    if (!fileStat.isFile()) {
-      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
-    }
-
-    const buffer = await readFile(filePath);
-
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': 'image/jpeg',
-        'Content-Length': buffer.length.toString(),
-        'Cache-Control': 'public, max-age=86400',
-      },
-    });
-  } catch {
+  if (!buffer) {
     return NextResponse.json({ error: 'Image not found' }, { status: 404 });
   }
+
+  return new NextResponse(new Uint8Array(buffer), {
+    headers: {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': buffer.length.toString(),
+      'Cache-Control': 'public, max-age=86400',
+    },
+  });
 }

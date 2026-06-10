@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { setJob } from '@/lib/storage';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -19,7 +18,6 @@ const STYLE_PRESETS: Record<string, string> = {
 
 const VALID_SIZES = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'];
 
-// In-memory job store (resets on server restart, but fine for dev)
 interface GenerationJob {
   id: string;
   status: 'processing' | 'complete' | 'error';
@@ -29,7 +27,7 @@ interface GenerationJob {
   numImages: number;
   images: Array<{
     id: string;
-    url: string; // URL to fetch the image from /api/image/[id]
+    url: string;
     prompt: string;
     style: string;
     size: string;
@@ -37,13 +35,6 @@ interface GenerationJob {
   }>;
   error?: string;
   createdAt: number;
-}
-
-const jobs = new Map<string, GenerationJob>();
-
-// Export for the status endpoint to access
-export function getJob(jobId: string): GenerationJob | undefined {
-  return jobs.get(jobId);
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -90,9 +81,10 @@ export async function POST(request: NextRequest) {
     createdAt: Date.now(),
   };
 
-  jobs.set(jobId, job);
+  // Save job to storage
+  await setJob(jobId, job);
 
-  // Return job ID immediately — no waiting for AI generation!
+  // Return job ID immediately
   const response = NextResponse.json({
     jobId,
     status: 'processing',
@@ -100,23 +92,23 @@ export async function POST(request: NextRequest) {
   });
 
   // Start generation in the background (fire-and-forget)
+  // On Vercel, this works because the function stays alive after response
   (async () => {
     console.log(`[Generate] Job ${jobId} started:`, { prompt: prompt.slice(0, 50), style: stylePreset, size: validatedSize, numImages: validatedNumImages });
 
     try {
-      // Init SDK
+      const { saveImage } = await import('@/lib/storage');
+
       let zai;
       try {
         zai = await withTimeout(ZAI.create(), 15000);
       } catch (initError) {
         job.status = 'error';
         job.error = 'AI service initialization failed. Please try again.';
+        await setJob(jobId, job);
         console.error(`[Generate] Job ${jobId} SDK init failed:`, initError);
         return;
       }
-
-      const imagesDir = path.join(process.cwd(), 'generated-images');
-      await mkdir(imagesDir, { recursive: true });
 
       for (let i = 0; i < validatedNumImages; i++) {
         try {
@@ -133,34 +125,37 @@ export async function POST(request: NextRequest) {
           const item = aiResponse.data?.[0];
           if (item && (item.base64 || item.url)) {
             const imageId = `img_${Date.now()}_${i}`;
+            let imageBuffer: Buffer | null = null;
 
-            // Save image to disk
             if (item.base64) {
-              const buffer = Buffer.from(item.base64, 'base64');
-              const filePath = path.join(imagesDir, `${imageId}.jpg`);
-              await writeFile(filePath, buffer);
+              imageBuffer = Buffer.from(item.base64, 'base64');
             } else if (item.url) {
-              // Download from URL
               try {
                 const imgResp = await fetch(item.url);
                 const arrayBuffer = await imgResp.arrayBuffer();
-                const filePath = path.join(imagesDir, `${imageId}.jpg`);
-                await writeFile(filePath, Buffer.from(arrayBuffer));
+                imageBuffer = Buffer.from(arrayBuffer);
               } catch (dlError) {
-                console.error(`[Generate] Job ${jobId} - failed to download image from URL:`, dlError);
+                console.error(`[Generate] Job ${jobId} - failed to download image:`, dlError);
               }
             }
 
-            job.images.push({
-              id: imageId,
-              url: `/api/image/${imageId}`,
-              prompt,
-              style: stylePreset,
-              size: validatedSize,
-              timestamp: Date.now(),
-            });
+            if (imageBuffer) {
+              const imageUrl = await saveImage(imageId, imageBuffer);
 
-            console.log(`[Generate] Job ${jobId} - image ${i + 1} saved (${imageId})`);
+              job.images.push({
+                id: imageId,
+                url: imageUrl,
+                prompt,
+                style: stylePreset,
+                size: validatedSize,
+                timestamp: Date.now(),
+              });
+
+              // Update job after each image so polling picks it up
+              await setJob(jobId, job);
+
+              console.log(`[Generate] Job ${jobId} - image ${i + 1} saved (${imageId})`);
+            }
           } else {
             console.error(`[Generate] Job ${jobId} - image ${i + 1} returned empty data`);
           }
@@ -174,12 +169,15 @@ export async function POST(request: NextRequest) {
         job.error = 'Could not generate images. The AI service may be temporarily busy — please try again.';
       } else {
         job.status = 'complete';
-        console.log(`[Generate] Job ${jobId} complete: ${job.images.length} of ${validatedNumImages} images`);
       }
+
+      await setJob(jobId, job);
+      console.log(`[Generate] Job ${jobId} ${job.status}: ${job.images.length} of ${validatedNumImages} images`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       job.status = 'error';
       job.error = `Generation failed: ${errorMessage}`;
+      await setJob(jobId, job);
       console.error(`[Generate] Job ${jobId} fatal error:`, errorMessage);
     }
   })();
