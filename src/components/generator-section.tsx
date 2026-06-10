@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2, Sparkles, ChevronDown, ChevronUp, Loader2,
@@ -54,6 +54,8 @@ export function GeneratorSection() {
 
   const [promptPlaceholder, setPromptPlaceholder] = useState(placeholderPrompts[0]);
   const [enhancing, setEnhancing] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cycle placeholder text
   useEffect(() => {
@@ -68,7 +70,6 @@ export function GeneratorSection() {
   const handleEnhance = useCallback(async () => {
     if (!prompt.trim()) return;
     setEnhancing(true);
-    // Simulate AI enhancement
     await new Promise((r) => setTimeout(r, 1500));
     const enhancements: Record<StylePreset, string> = {
       realistic: ', ultra detailed, 8k resolution, professional photography, soft bokeh',
@@ -103,10 +104,16 @@ export function GeneratorSection() {
     setIsGenerating(true);
     setGenerationProgress(0);
 
+    // Create abort controller for timeout
+    abortControllerRef.current = new AbortController();
+    const timeoutId = setTimeout(() => {
+      abortControllerRef.current?.abort();
+    }, 90000); // 90 second timeout
+
     // Simulate progress
-    const progressInterval = setInterval(() => {
-      setGenerationProgress(Math.min(95, useAppStore.getState().generationProgress + Math.random() * 15));
-    }, 500);
+    progressIntervalRef.current = setInterval(() => {
+      setGenerationProgress(Math.min(90, useAppStore.getState().generationProgress + Math.random() * 8));
+    }, 800);
 
     try {
       const response = await fetch('/api/generate', {
@@ -119,21 +126,34 @@ export function GeneratorSection() {
           size: selectedSize,
           numImages,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
-      clearInterval(progressInterval);
-      setGenerationProgress(100);
+      clearTimeout(timeoutId);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      setGenerationProgress(95);
 
       if (!response.ok) {
-        throw new Error('Generation failed');
+        const errorData = await response.json().catch(() => null);
+        const errorMsg = errorData?.error || 'Generation failed';
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
+      setGenerationProgress(100);
 
-      data.images.forEach((img: { id: string; base64: string; prompt: string; style: string; size: string; timestamp: number }) => {
+      // Check if we got valid image data back
+      const validImages = data.images.filter((img: { base64?: string; url?: string }) => img.base64 || img.url);
+
+      if (validImages.length === 0) {
+        throw new Error('No images were returned from the AI service');
+      }
+
+      validImages.forEach((img: { id: string; base64: string; url?: string; prompt: string; style: string; size: string; timestamp: number }) => {
         addGeneratedImage({
           id: img.id,
-          base64: img.base64,
+          base64: img.base64 || '',
+          url: img.url || '',
           prompt: img.prompt,
           style: img.style as StylePreset,
           size: img.size as ImageSize,
@@ -141,7 +161,7 @@ export function GeneratorSection() {
         });
       });
 
-      deductCredits(numImages);
+      deductCredits(validImages.length);
 
       addPromptHistory({
         id: `ph_${Date.now()}`,
@@ -150,20 +170,39 @@ export function GeneratorSection() {
         timestamp: Date.now(),
       });
 
-      toast({ title: 'Images Generated!', description: `${data.images.length} image(s) created successfully.` });
+      toast({
+        title: 'Images Generated!',
+        description: `${validImages.length} image${validImages.length > 1 ? 's' : ''} created successfully.`
+      });
 
       // Scroll to gallery
       setTimeout(() => {
         document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
       }, 500);
-    } catch (error) {
-      toast({ title: 'Generation Failed', description: 'Something went wrong. Please try again.', variant: 'destructive' });
+    } catch (error: unknown) {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        toast({
+          title: 'Generation Timed Out',
+          description: 'The AI service took too long to respond. Please try again with a simpler prompt.',
+          variant: 'destructive',
+        });
+      } else {
+        const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+        toast({
+          title: 'Generation Failed',
+          description: message,
+          variant: 'destructive',
+        });
+      }
     } finally {
-      clearInterval(progressInterval);
+      clearTimeout(timeoutId);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       setTimeout(() => {
         setIsGenerating(false);
         setGenerationProgress(0);
-      }, 1000);
+      }, 800);
     }
   }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, addGeneratedImage, addPromptHistory, setIsGenerating, setGenerationProgress, deductCredits]);
 
@@ -288,7 +327,6 @@ export function GeneratorSection() {
                       : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
                   }`}
                 >
-                  {/* Mini gradient preview */}
                   <div className={`w-full h-12 rounded-lg bg-gradient-to-br ${style.gradient} mb-2 opacity-60 group-hover:opacity-80 transition-opacity`} />
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-400 group-hover:text-gray-300 transition-colors">{style.icon}</span>
@@ -413,7 +451,6 @@ export function GeneratorSection() {
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
                   <span>Generating... {Math.round(generationProgress)}%</span>
-                  {/* Progress bar */}
                   <div className="absolute bottom-0 left-0 h-1 bg-white/30 transition-all duration-300"
                     style={{ width: `${generationProgress}%` }}
                   />

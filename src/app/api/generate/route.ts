@@ -14,6 +14,8 @@ const STYLE_PRESETS: Record<string, string> = {
 
 const VALID_SIZES = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'];
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -31,29 +33,53 @@ export async function POST(request: NextRequest) {
     const validatedNumImages = Math.min(Math.max(Number(numImages) || 1, 1), 4);
     const stylePrefix = STYLE_PRESETS[stylePreset] || '';
 
-    const enhancedPrompt = `${stylePrefix}${prompt}${negativePrompt ? `, NOT: ${negativePrompt}` : ''}`;
+    const enhancedPrompt = `${stylePrefix}${prompt}${negativePrompt ? `. Avoid: ${negativePrompt}` : ''}`;
 
+    console.log('[Generate] Starting generation:', { prompt: prompt.slice(0, 50), style: stylePreset, size: validatedSize, numImages: validatedNumImages });
+
+    // Generate images - the SDK generates 1 image per call, so we call it multiple times for multiple images
+    const images = [];
     const zai = await ZAI.create();
-    const response = await zai.images.generations.create({
-      prompt: enhancedPrompt,
-      size: validatedSize as '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440',
-    });
 
-    const images = response.data.map((item: { base64?: string; url?: string }, index: number) => ({
-      id: `img_${Date.now()}_${index}`,
-      base64: item.base64 || '',
-      url: item.url || '',
-      prompt,
-      style: stylePreset,
-      size: validatedSize,
-      timestamp: Date.now(),
-    }));
+    for (let i = 0; i < validatedNumImages; i++) {
+      try {
+        const response = await zai.images.generations.create({
+          prompt: enhancedPrompt,
+          size: validatedSize as '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440',
+        });
 
-    return NextResponse.json({ images, creditsUsed: validatedNumImages });
-  } catch (error) {
-    console.error('Image generation error:', error);
+        const item = response.data[0];
+        if (item) {
+          images.push({
+            id: `img_${Date.now()}_${i}`,
+            base64: item.base64 || '',
+            url: item.url || '',
+            prompt,
+            style: stylePreset,
+            size: validatedSize,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (imgError) {
+        console.error(`[Generate] Image ${i + 1} failed:`, imgError);
+        // Continue generating other images even if one fails
+      }
+    }
+
+    if (images.length === 0) {
+      return NextResponse.json(
+        { error: 'Failed to generate any images. The AI service may be temporarily unavailable. Please try again.' },
+        { status: 500 }
+      );
+    }
+
+    console.log('[Generate] Success:', images.length, 'images generated');
+    return NextResponse.json({ images, creditsUsed: images.length });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Generate] Fatal error:', errorMessage);
     return NextResponse.json(
-      { error: 'Failed to generate image. Please try again.' },
+      { error: `Failed to generate image: ${errorMessage}. Please try again.` },
       { status: 500 }
     );
   }

@@ -8,9 +8,6 @@ import { useAppStore, type GeneratedImage } from '@/store/use-app-store';
 function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
   const [loaded, setLoaded] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const imageUrl = image.base64
-    ? `data:image/png;base64,${image.base64}`
-    : null;
 
   const styleGradients: Record<string, string> = {
     realistic: 'from-slate-400 via-gray-500 to-zinc-600',
@@ -22,6 +19,11 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
     pixar: 'from-yellow-400 via-amber-500 to-orange-500',
     ghibli: 'from-green-400 via-emerald-500 to-teal-600',
   };
+
+  // Support both base64 and url responses from the API
+  const imageUrl = image.base64
+    ? `data:image/png;base64,${image.base64}`
+    : image.url || null;
 
   return (
     <motion.div
@@ -40,6 +42,7 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
               alt={image.prompt}
               className={`w-full h-full object-cover transition-all duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setLoaded(true)}
+              onError={() => setLoaded(false)}
             />
             {!loaded && (
               <div className={`absolute inset-0 bg-gradient-to-br ${styleGradients[image.style] || 'from-violet-600 to-purple-600'} animate-pulse`} />
@@ -61,26 +64,44 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
               transition={{ duration: 0.2 }}
               className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col justify-between p-3"
             >
-              {/* Prompt text */}
               <p className="text-xs text-white/80 line-clamp-3 bg-black/40 rounded-lg p-2">
                 {image.prompt}
               </p>
 
-              {/* Actions */}
               <div className="flex items-center gap-1.5">
-                <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Download">
+                <button
+                  onClick={(e) => { e.stopPropagation(); }}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  title="Download"
+                >
                   <Download className="w-4 h-4 text-white" />
                 </button>
-                <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Upscale">
+                <button
+                  onClick={(e) => { e.stopPropagation(); }}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  title="Upscale"
+                >
                   <Maximize2 className="w-4 h-4 text-white" />
                 </button>
-                <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Variations">
+                <button
+                  onClick={(e) => { e.stopPropagation(); }}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  title="Variations"
+                >
                   <RefreshCw className="w-4 h-4 text-white" />
                 </button>
-                <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Remix">
+                <button
+                  onClick={(e) => { e.stopPropagation(); }}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  title="Remix"
+                >
                   <Wand2 className="w-4 h-4 text-white" />
                 </button>
-                <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors ml-auto" title="Delete">
+                <button
+                  onClick={(e) => { e.stopPropagation(); }}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors ml-auto"
+                  title="Delete"
+                >
                   <Trash2 className="w-4 h-4 text-red-400" />
                 </button>
               </div>
@@ -100,7 +121,7 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
 function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => void }) {
   const imageUrl = image.base64
     ? `data:image/png;base64,${image.base64}`
-    : null;
+    : image.url || null;
 
   return (
     <motion.div
@@ -168,7 +189,6 @@ export function GallerySection() {
         </motion.div>
 
         {generatedImages.length === 0 ? (
-          /* Empty state */
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             whileInView={{ opacity: 1, scale: 1 }}
@@ -191,7 +211,6 @@ export function GallerySection() {
             </a>
           </motion.div>
         ) : (
-          /* Image grid */
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
             {generatedImages.map((image, index) => (
               <div key={image.id} onClick={() => setSelectedImage(image)} className="cursor-pointer">
@@ -202,7 +221,6 @@ export function GallerySection() {
         )}
       </div>
 
-      {/* Image modal */}
       <AnimatePresence>
         {selectedImage && (
           <ImageModal image={selectedImage} onClose={() => setSelectedImage(null)} />

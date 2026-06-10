@@ -7,6 +7,7 @@ export type ImageSize = '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '11
 export interface GeneratedImage {
   id: string;
   base64: string;
+  url?: string;
   prompt: string;
   style: StylePreset;
   size: ImageSize;
