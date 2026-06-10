@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { writeFile, mkdir } from 'fs/promises';
+import path from 'path';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -16,6 +18,33 @@ const STYLE_PRESETS: Record<string, string> = {
 };
 
 const VALID_SIZES = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'];
+
+// In-memory job store (resets on server restart, but fine for dev)
+interface GenerationJob {
+  id: string;
+  status: 'processing' | 'complete' | 'error';
+  prompt: string;
+  style: string;
+  size: string;
+  numImages: number;
+  images: Array<{
+    id: string;
+    url: string; // URL to fetch the image from /api/image/[id]
+    prompt: string;
+    style: string;
+    size: string;
+    timestamp: number;
+  }>;
+  error?: string;
+  createdAt: number;
+}
+
+const jobs = new Map<string, GenerationJob>();
+
+// Export for the status endpoint to access
+export function getJob(jobId: string): GenerationJob | undefined {
+  return jobs.get(jobId);
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -47,127 +76,113 @@ export async function POST(request: NextRequest) {
   const stylePrefix = STYLE_PRESETS[stylePreset] || '';
   const enhancedPrompt = `${stylePrefix}${prompt}${negativePrompt ? `. Avoid: ${negativePrompt}` : ''}`;
 
-  console.log('[Generate] Request:', { prompt: prompt.slice(0, 50), style: stylePreset, size: validatedSize, numImages: validatedNumImages });
+  // Create a job
+  const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  // Init SDK with timeout
-  let zai;
-  try {
-    zai = await withTimeout(ZAI.create(), 15000);
-  } catch (initError) {
-    console.error('[Generate] SDK init failed:', initError);
-    return NextResponse.json(
-      { error: 'AI service initialization failed. Please try again.' },
-      { status: 503 }
-    );
-  }
-
-  const encoder = new TextEncoder();
-  let closed = false;
-
-  // Helper: safely enqueue to the stream, return false if stream is closed
-  const safeEnqueue = (controller: ReadableStreamDefaultController, data: string): boolean => {
-    if (closed) return false;
-    try {
-      controller.enqueue(encoder.encode(data));
-      return true;
-    } catch {
-      closed = true;
-      return false;
-    }
+  const job: GenerationJob = {
+    id: jobId,
+    status: 'processing',
+    prompt,
+    style: stylePreset,
+    size: validatedSize,
+    numImages: validatedNumImages,
+    images: [],
+    createdAt: Date.now(),
   };
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      // Heartbeat to keep proxy alive — sends a comment line every 3 seconds
-      const heartbeat = setInterval(() => {
-        if (!safeEnqueue(controller, ': heartbeat\n\n')) {
-          clearInterval(heartbeat);
-        }
-      }, 3000);
+  jobs.set(jobId, job);
 
+  // Return job ID immediately — no waiting for AI generation!
+  const response = NextResponse.json({
+    jobId,
+    status: 'processing',
+    message: 'Generation started. Poll /api/generate/status for updates.',
+  });
+
+  // Start generation in the background (fire-and-forget)
+  (async () => {
+    console.log(`[Generate] Job ${jobId} started:`, { prompt: prompt.slice(0, 50), style: stylePreset, size: validatedSize, numImages: validatedNumImages });
+
+    try {
+      // Init SDK
+      let zai;
       try {
-        // Signal: connected
-        safeEnqueue(controller, `data: ${JSON.stringify({ type: 'progress', status: 'initializing', message: 'Connecting to AI service...' })}\n\n`);
-
-        const images: Array<{
-          id: string;
-          base64: string;
-          url?: string;
-          prompt: string;
-          style: string;
-          size: string;
-          timestamp: number;
-        }> = [];
-
-        for (let i = 0; i < validatedNumImages; i++) {
-          try {
-            const statusMsg = validatedNumImages > 1
-              ? `Generating image ${i + 1} of ${validatedNumImages}...`
-              : 'Creating your image...';
-
-            safeEnqueue(controller, `data: ${JSON.stringify({ type: 'progress', status: 'generating', message: statusMsg, current: i + 1, total: validatedNumImages })}\n\n`);
-
-            console.log(`[Generate] Starting image ${i + 1}/${validatedNumImages}...`);
-
-            const response = await withTimeout(
-              zai.images.generations.create({
-                prompt: enhancedPrompt,
-                size: validatedSize as '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440',
-              }),
-              80000
-            ) as { data?: Array<{ base64?: string; url?: string }> };
-
-            const item = response.data?.[0];
-            if (item && (item.base64 || item.url)) {
-              const img = {
-                id: `img_${Date.now()}_${i}`,
-                base64: item.base64 || '',
-                url: item.url || '',
-                prompt,
-                style: stylePreset,
-                size: validatedSize,
-                timestamp: Date.now(),
-              };
-              images.push(img);
-
-              // Send image as it's ready
-              safeEnqueue(controller, `data: ${JSON.stringify({ type: 'image', data: img })}\n\n`);
-
-              console.log(`[Generate] Image ${i + 1} generated successfully (base64: ${!!item.base64}, url: ${!!item.url})`);
-            } else {
-              console.error(`[Generate] Image ${i + 1} returned empty data`);
-            }
-          } catch (imgError) {
-            console.error(`[Generate] Image ${i + 1} failed:`, imgError instanceof Error ? imgError.message : imgError);
-          }
-        }
-
-        clearInterval(heartbeat);
-
-        if (images.length === 0) {
-          safeEnqueue(controller, `data: ${JSON.stringify({ type: 'error', error: 'Could not generate images. The AI service may be temporarily busy — please try again.' })}\n\n`);
-        } else {
-          safeEnqueue(controller, `data: ${JSON.stringify({ type: 'complete', creditsUsed: images.length, totalImages: images.length })}\n\n`);
-          console.log('[Generate] Complete:', images.length, 'of', validatedNumImages, 'images');
-        }
-      } catch (error: unknown) {
-        clearInterval(heartbeat);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error('[Generate] Fatal error:', errorMessage);
-        safeEnqueue(controller, `data: ${JSON.stringify({ type: 'error', error: `Generation failed: ${errorMessage}` })}\n\n`);
+        zai = await withTimeout(ZAI.create(), 15000);
+      } catch (initError) {
+        job.status = 'error';
+        job.error = 'AI service initialization failed. Please try again.';
+        console.error(`[Generate] Job ${jobId} SDK init failed:`, initError);
+        return;
       }
 
-      closed = true;
-      try { controller.close(); } catch { /* already closed */ }
-    },
-  });
+      const imagesDir = path.join(process.cwd(), 'generated-images');
+      await mkdir(imagesDir, { recursive: true });
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    },
-  });
+      for (let i = 0; i < validatedNumImages; i++) {
+        try {
+          console.log(`[Generate] Job ${jobId} - image ${i + 1}/${validatedNumImages}...`);
+
+          const aiResponse = await withTimeout(
+            zai.images.generations.create({
+              prompt: enhancedPrompt,
+              size: validatedSize as '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440',
+            }),
+            80000
+          ) as { data?: Array<{ base64?: string; url?: string }> };
+
+          const item = aiResponse.data?.[0];
+          if (item && (item.base64 || item.url)) {
+            const imageId = `img_${Date.now()}_${i}`;
+
+            // Save image to disk
+            if (item.base64) {
+              const buffer = Buffer.from(item.base64, 'base64');
+              const filePath = path.join(imagesDir, `${imageId}.jpg`);
+              await writeFile(filePath, buffer);
+            } else if (item.url) {
+              // Download from URL
+              try {
+                const imgResp = await fetch(item.url);
+                const arrayBuffer = await imgResp.arrayBuffer();
+                const filePath = path.join(imagesDir, `${imageId}.jpg`);
+                await writeFile(filePath, Buffer.from(arrayBuffer));
+              } catch (dlError) {
+                console.error(`[Generate] Job ${jobId} - failed to download image from URL:`, dlError);
+              }
+            }
+
+            job.images.push({
+              id: imageId,
+              url: `/api/image/${imageId}`,
+              prompt,
+              style: stylePreset,
+              size: validatedSize,
+              timestamp: Date.now(),
+            });
+
+            console.log(`[Generate] Job ${jobId} - image ${i + 1} saved (${imageId})`);
+          } else {
+            console.error(`[Generate] Job ${jobId} - image ${i + 1} returned empty data`);
+          }
+        } catch (imgError) {
+          console.error(`[Generate] Job ${jobId} - image ${i + 1} failed:`, imgError instanceof Error ? imgError.message : imgError);
+        }
+      }
+
+      if (job.images.length === 0) {
+        job.status = 'error';
+        job.error = 'Could not generate images. The AI service may be temporarily busy — please try again.';
+      } else {
+        job.status = 'complete';
+        console.log(`[Generate] Job ${jobId} complete: ${job.images.length} of ${validatedNumImages} images`);
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      job.status = 'error';
+      job.error = `Generation failed: ${errorMessage}`;
+      console.error(`[Generate] Job ${jobId} fatal error:`, errorMessage);
+    }
+  })();
+
+  return response;
 }

@@ -130,31 +130,39 @@ export function GeneratorSection() {
 
     setIsGenerating(true);
     setGenerationProgress(5);
-    setGenerationStatus('Connecting to AI...');
+    setGenerationStatus('Starting generation...');
 
-    // Create abort controller
+    // Create abort controller for cancellation
     abortControllerRef.current = new AbortController();
     const { signal } = abortControllerRef.current;
+    let cancelled = false;
 
-    // Auto-abort after 3 minutes
+    // Auto-cancel after 3 minutes
     const timeoutId = setTimeout(() => {
+      cancelled = true;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     }, 180000);
 
-    // Slow simulated progress — overridden by real SSE progress
+    // Animate progress while polling
     let progressVal = 5;
     progressIntervalRef.current = setInterval(() => {
-      progressVal = Math.min(85, progressVal + Math.random() * 1.5);
-      setGenerationProgress(progressVal);
-    }, 1000);
-
-    let receivedImageCount = 0;
-    let hasError = false;
+      if (progressVal < 90) {
+        progressVal += Math.random() * 1.2;
+        setGenerationProgress(progressVal);
+      }
+      // Cycle status messages
+      if (progressVal > 10 && progressVal < 25) setGenerationStatus('Understanding your prompt...');
+      else if (progressVal >= 25 && progressVal < 45) setGenerationStatus('Creating composition...');
+      else if (progressVal >= 45 && progressVal < 65) setGenerationStatus('Rendering details...');
+      else if (progressVal >= 65 && progressVal < 85) setGenerationStatus('Finalizing image...');
+      else if (progressVal >= 85) setGenerationStatus('Almost there...');
+    }, 800);
 
     try {
-      const response = await fetch('/api/generate', {
+      // Step 1: Start the generation job (returns immediately!)
+      const startResponse = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -167,129 +175,108 @@ export function GeneratorSection() {
         signal,
       });
 
-      // Handle non-streaming error responses (400, 503, etc.)
-      if (!response.ok) {
+      if (!startResponse.ok) {
         let errorMsg = 'Generation failed';
         try {
-          const errorData = await response.json();
+          const errorData = await startResponse.json();
           errorMsg = errorData?.error || errorMsg;
         } catch {}
         throw new Error(errorMsg);
       }
 
-      // Process Server-Sent Events stream
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response stream');
+      const startData = await startResponse.json();
+      const jobId = startData.jobId;
 
-      const decoder = new TextDecoder();
-      let buffer = '';
+      if (!jobId) {
+        throw new Error('No job ID returned from server');
+      }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      setGenerationProgress(10);
+      setGenerationStatus('AI is creating your image...');
 
-        buffer += decoder.decode(value, { stream: true });
+      // Step 2: Poll for job status every 2 seconds
+      let lastImageCount = 0;
 
-        // Split by double newlines (SSE event boundary)
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
+      while (!cancelled) {
+        // Wait 2 seconds between polls
+        await new Promise(r => setTimeout(r, 2000));
 
-        for (const event of events) {
-          const lines = event.split('\n');
-          for (const line of lines) {
-            // Skip heartbeat comments
-            if (line.startsWith(': ')) continue;
-            if (!line.startsWith('data: ')) continue;
+        if (cancelled) break;
 
-            const jsonStr = line.slice(6); // Remove "data: " prefix
-            if (!jsonStr.trim()) continue;
+        const statusResponse = await fetch(`/api/generate/status?jobId=${jobId}`, { signal });
 
-            try {
-              const msg = JSON.parse(jsonStr);
-
-              if (msg.type === 'progress') {
-                if (msg.status === 'initializing') {
-                  setGenerationStatus('Connecting to AI service...');
-                  setGenerationProgress(10);
-                } else if (msg.status === 'generating') {
-                  setGenerationStatus(msg.message || 'Creating your image...');
-                  if (msg.current && msg.total) {
-                    progressVal = 15 + ((msg.current - 1) / msg.total) * 50;
-                    setGenerationProgress(progressVal);
-                  }
-                }
-              } else if (msg.type === 'image') {
-                receivedImageCount++;
-                const img = msg.data;
-                if (img && (img.base64 || img.url)) {
-                  addGeneratedImage({
-                    id: img.id,
-                    base64: img.base64 || '',
-                    url: img.url || '',
-                    prompt: img.prompt,
-                    style: img.style as StylePreset,
-                    size: img.size as ImageSize,
-                    timestamp: img.timestamp,
-                  });
-                }
-                progressVal = 15 + (receivedImageCount / numImages) * 65;
-                setGenerationProgress(progressVal);
-                setGenerationStatus(
-                  numImages > 1
-                    ? `Image ${receivedImageCount} of ${numImages} ready!`
-                    : 'Image ready!'
-                );
-              } else if (msg.type === 'complete') {
-                if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-                setGenerationProgress(100);
-                setGenerationStatus('Done!');
-
-                deductCredits(msg.creditsUsed);
-
-                addPromptHistory({
-                  id: `ph_${Date.now()}`,
-                  prompt,
-                  style: selectedStyle,
-                  timestamp: Date.now(),
-                });
-
-                toast({
-                  title: 'Image Generated!',
-                  description: `${receivedImageCount} image${receivedImageCount > 1 ? 's' : ''} created successfully.`,
-                });
-
-                setTimeout(() => {
-                  document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
-                }, 600);
-
-              } else if (msg.type === 'error') {
-                hasError = true;
-                toast({
-                  title: 'Generation Failed',
-                  description: msg.error || 'Something went wrong. Please try again.',
-                  variant: 'destructive',
-                });
-              }
-            } catch {
-              // Skip malformed JSON
-            }
+        if (!statusResponse.ok) {
+          if (statusResponse.status === 404) {
+            throw new Error('Generation job not found. Please try again.');
           }
+          continue; // Retry on transient errors
         }
-      }
 
-      if (receivedImageCount === 0 && !hasError) {
-        toast({
-          title: 'Generation Failed',
-          description: 'No images were generated. Please try again.',
-          variant: 'destructive',
-        });
-      }
+        const statusData = await statusResponse.json();
 
+        // Add any new images to gallery as they arrive
+        if (statusData.images && statusData.images.length > lastImageCount) {
+          const newImages = statusData.images.slice(lastImageCount);
+          for (const img of newImages) {
+            addGeneratedImage({
+              id: img.id,
+              base64: '', // Images are now served via URL
+              url: img.url,
+              prompt: img.prompt,
+              style: img.style as StylePreset,
+              size: img.size as ImageSize,
+              timestamp: img.timestamp,
+            });
+          }
+          lastImageCount = statusData.images.length;
+
+          progressVal = 20 + (lastImageCount / numImages) * 60;
+          setGenerationProgress(progressVal);
+          setGenerationStatus(
+            numImages > 1
+              ? `Image ${lastImageCount} of ${numImages} ready!`
+              : 'Image ready!'
+          );
+        }
+
+        // Check if job is complete
+        if (statusData.status === 'complete') {
+          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+          setGenerationProgress(100);
+          setGenerationStatus('Done!');
+
+          deductCredits(lastImageCount);
+
+          addPromptHistory({
+            id: `ph_${Date.now()}`,
+            prompt,
+            style: selectedStyle,
+            timestamp: Date.now(),
+          });
+
+          toast({
+            title: 'Image Generated!',
+            description: `${lastImageCount} image${lastImageCount > 1 ? 's' : ''} created successfully.`,
+          });
+
+          setTimeout(() => {
+            document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
+          }, 600);
+
+          break;
+        }
+
+        if (statusData.status === 'error') {
+          throw new Error(statusData.error || 'Generation failed. Please try again.');
+        }
+
+        // Still processing — continue polling
+      }
     } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) {
         toast({
           title: 'Generation Timed Out',
-          description: 'The AI service took too long. Please try again — sometimes a shorter prompt works faster.',
+          description: 'The AI service took too long. Please try again.',
           variant: 'destructive',
         });
       } else {
