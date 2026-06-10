@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2, Sparkles, ChevronDown, ChevronUp, Loader2,
   Camera, Film, Box, TreePine, Cpu, Palette, Ghost, Wind,
-  ImageIcon, Zap, AlertCircle, Check
+  ImageIcon, Zap, AlertCircle, Check, RotateCcw
 } from 'lucide-react';
 import { useAppStore, type StylePreset, type ImageSize } from '@/store/use-app-store';
 import { toast } from '@/hooks/use-toast';
@@ -54,8 +54,10 @@ export function GeneratorSection() {
 
   const [promptPlaceholder, setPromptPlaceholder] = useState(placeholderPrompts[0]);
   const [enhancing, setEnhancing] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isGeneratingRef = useRef(false);
 
   // Cycle placeholder text
   useEffect(() => {
@@ -65,6 +67,14 @@ export function GeneratorSection() {
       setPromptPlaceholder(placeholderPrompts[idx]);
     }, 4000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
   }, []);
 
   const handleEnhance = useCallback(async () => {
@@ -91,6 +101,19 @@ export function GeneratorSection() {
     setNegativePrompt(negativePrompt ? `${negativePrompt}, ${tag}` : tag);
   }, [negativePrompt, setNegativePrompt]);
 
+  const cleanupGeneration = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    isGeneratingRef.current = false;
+    setTimeout(() => {
+      setIsGenerating(false);
+      setGenerationProgress(0);
+      setGenerationStatus('');
+    }, 500);
+  }, [setIsGenerating, setGenerationProgress]);
+
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) {
       toast({ title: 'Enter a prompt', description: 'Please describe what you want to create.', variant: 'destructive' });
@@ -101,19 +124,37 @@ export function GeneratorSection() {
       return;
     }
 
+    // Prevent double-generation
+    if (isGeneratingRef.current) return;
+    isGeneratingRef.current = true;
+
     setIsGenerating(true);
     setGenerationProgress(0);
+    setGenerationStatus('Initializing AI...');
 
-    // Create abort controller for timeout
+    // Create abort controller
     abortControllerRef.current = new AbortController();
-    const timeoutId = setTimeout(() => {
-      abortControllerRef.current?.abort();
-    }, 90000); // 90 second timeout
+    const { signal } = abortControllerRef.current;
 
-    // Simulate progress
+    // Auto-abort after 2 minutes
+    const timeoutId = setTimeout(() => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    }, 120000);
+
+    // Animate progress
+    let progressVal = 0;
     progressIntervalRef.current = setInterval(() => {
-      setGenerationProgress(Math.min(90, useAppStore.getState().generationProgress + Math.random() * 8));
-    }, 800);
+      progressVal = Math.min(85, progressVal + Math.random() * 3);
+      setGenerationProgress(progressVal);
+
+      // Update status messages
+      if (progressVal > 10 && progressVal < 30) setGenerationStatus('Understanding your prompt...');
+      else if (progressVal >= 30 && progressVal < 50) setGenerationStatus('Creating composition...');
+      else if (progressVal >= 50 && progressVal < 70) setGenerationStatus('Rendering details...');
+      else if (progressVal >= 70) setGenerationStatus('Finalizing image...');
+    }, 600);
 
     try {
       const response = await fetch('/api/generate', {
@@ -126,28 +167,35 @@ export function GeneratorSection() {
           size: selectedSize,
           numImages,
         }),
-        signal: abortControllerRef.current.signal,
+        signal,
       });
 
       clearTimeout(timeoutId);
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-      setGenerationProgress(95);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        const errorMsg = errorData?.error || 'Generation failed';
+        let errorMsg = 'Generation failed';
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData?.error || errorMsg;
+        } catch {}
         throw new Error(errorMsg);
       }
 
       const data = await response.json();
-      setGenerationProgress(100);
 
-      // Check if we got valid image data back
-      const validImages = data.images.filter((img: { base64?: string; url?: string }) => img.base64 || img.url);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      setGenerationProgress(95);
+      setGenerationStatus('Image ready!');
+
+      const validImages = (data.images || []).filter(
+        (img: { base64?: string; url?: string }) => img.base64 || img.url
+      );
 
       if (validImages.length === 0) {
-        throw new Error('No images were returned from the AI service');
+        throw new Error('AI service returned empty results. Please try again.');
       }
+
+      setGenerationProgress(100);
 
       validImages.forEach((img: { id: string; base64: string; url?: string; prompt: string; style: string; size: string; timestamp: number }) => {
         addGeneratedImage({
@@ -171,21 +219,20 @@ export function GeneratorSection() {
       });
 
       toast({
-        title: 'Images Generated!',
-        description: `${validImages.length} image${validImages.length > 1 ? 's' : ''} created successfully.`
+        title: 'Image Generated!',
+        description: `${validImages.length} image${validImages.length > 1 ? 's' : ''} created successfully.`,
       });
 
       // Scroll to gallery
       setTimeout(() => {
         document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
-      }, 500);
-    } catch (error: unknown) {
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      }, 600);
 
+    } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         toast({
           title: 'Generation Timed Out',
-          description: 'The AI service took too long to respond. Please try again with a simpler prompt.',
+          description: 'The AI service took too long. Please try again — sometimes a shorter prompt works faster.',
           variant: 'destructive',
         });
       } else {
@@ -198,13 +245,17 @@ export function GeneratorSection() {
       }
     } finally {
       clearTimeout(timeoutId);
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-      setTimeout(() => {
-        setIsGenerating(false);
-        setGenerationProgress(0);
-      }, 800);
+      cleanupGeneration();
     }
-  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, addGeneratedImage, addPromptHistory, setIsGenerating, setGenerationProgress, deductCredits]);
+  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, addGeneratedImage, addPromptHistory, deductCredits, cleanupGeneration, setIsGenerating, setGenerationProgress]);
+
+  const handleCancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    cleanupGeneration();
+    toast({ title: 'Generation Cancelled', description: 'Image generation was cancelled.' });
+  }, [cleanupGeneration]);
 
   return (
     <section id="generate" className="relative py-20 z-10">
@@ -248,11 +299,12 @@ export function GeneratorSection() {
                 onChange={(e) => setPrompt(e.target.value.slice(0, 1000))}
                 placeholder={promptPlaceholder}
                 rows={4}
-                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 resize-none transition-all text-sm leading-relaxed"
+                disabled={isGenerating}
+                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 resize-none transition-all text-sm leading-relaxed disabled:opacity-50"
               />
               <button
                 onClick={handleEnhance}
-                disabled={!prompt.trim() || enhancing}
+                disabled={!prompt.trim() || enhancing || isGenerating}
                 className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium hover:bg-violet-500/30 hover:border-violet-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
               >
                 {enhancing ? (
@@ -287,14 +339,16 @@ export function GeneratorSection() {
                     onChange={(e) => setNegativePrompt(e.target.value)}
                     placeholder="Things to avoid in the image..."
                     rows={2}
-                    className="mt-3 w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-red-500/30 focus:ring-1 focus:ring-red-500/20 resize-none transition-all text-sm"
+                    disabled={isGenerating}
+                    className="mt-3 w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-red-500/30 focus:ring-1 focus:ring-red-500/20 resize-none transition-all text-sm disabled:opacity-50"
                   />
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {negativePromptTags.map((tag) => (
                       <button
                         key={tag}
                         onClick={() => handleAddNegTag(tag)}
-                        className="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400/70 text-xs hover:bg-red-500/20 hover:text-red-300 transition-all"
+                        disabled={isGenerating}
+                        className="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400/70 text-xs hover:bg-red-500/20 hover:text-red-300 transition-all disabled:opacity-40"
                       >
                         + {tag}
                       </button>
@@ -321,7 +375,8 @@ export function GeneratorSection() {
                   onClick={() => setSelectedStyle(style.id)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className={`relative p-3 rounded-xl border transition-all duration-200 text-left group ${
+                  disabled={isGenerating}
+                  className={`relative p-3 rounded-xl border transition-all duration-200 text-left group disabled:opacity-50 ${
                     selectedStyle === style.id
                       ? 'border-violet-500/50 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.2)]'
                       : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
@@ -362,7 +417,8 @@ export function GeneratorSection() {
                   <button
                     key={size.id}
                     onClick={() => setSelectedSize(size.id)}
-                    className={`p-2.5 rounded-xl border transition-all duration-200 text-center ${
+                    disabled={isGenerating}
+                    className={`p-2.5 rounded-xl border transition-all duration-200 text-center disabled:opacity-50 ${
                       selectedSize === size.id
                         ? 'border-violet-500/50 bg-violet-500/10'
                         : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
@@ -402,7 +458,8 @@ export function GeneratorSection() {
                   <button
                     key={n}
                     onClick={() => setNumImages(n)}
-                    className={`p-3 rounded-xl border transition-all duration-200 flex flex-col items-center ${
+                    disabled={isGenerating}
+                    className={`p-3 rounded-xl border transition-all duration-200 flex flex-col items-center disabled:opacity-50 ${
                       numImages === n
                         ? 'border-violet-500/50 bg-violet-500/10'
                         : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
@@ -429,7 +486,7 @@ export function GeneratorSection() {
               <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <Zap className="w-4 h-4 text-amber-400" />
                 <span className="text-xs text-amber-300">
-                  This will use {numImages} credit{numImages > 1 ? 's' : ''} · You have {credits} remaining
+                  This will use {numImages} credit{numImages > 1 ? 's' : ''} · You have <strong>{credits}</strong> remaining
                 </span>
               </div>
             </motion.div>
@@ -442,27 +499,37 @@ export function GeneratorSection() {
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.5 }}
           >
-            <button
-              onClick={handleGenerate}
-              disabled={isGenerating || !prompt.trim() || credits < numImages}
-              className="btn-generate w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] relative overflow-hidden"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Generating... {Math.round(generationProgress)}%</span>
-                  <div className="absolute bottom-0 left-0 h-1 bg-white/30 transition-all duration-300"
+            {!isGenerating ? (
+              <button
+                onClick={handleGenerate}
+                disabled={!prompt.trim() || credits < numImages}
+                className="btn-generate w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] relative overflow-hidden"
+              >
+                <Wand2 className="w-5 h-5" />
+                <span>Generate {numImages} Image{numImages > 1 ? 's' : ''}</span>
+                <span className="text-white/60 text-sm">({numImages} credit{numImages > 1 ? 's' : ''})</span>
+              </button>
+            ) : (
+              <div className="space-y-3">
+                {/* Generating state */}
+                <button
+                  onClick={handleCancel}
+                  className="w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                >
+                  <div className="absolute bottom-0 left-0 h-1.5 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 transition-all duration-500"
                     style={{ width: `${generationProgress}%` }}
                   />
-                </>
-              ) : (
-                <>
-                  <Wand2 className="w-5 h-5" />
-                  <span>Generate {numImages} Image{numImages > 1 ? 's' : ''}</span>
-                  <span className="text-white/60 text-sm">({numImages} credit{numImages > 1 ? 's' : ''})</span>
-                </>
-              )}
-            </button>
+                  <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
+                  <div className="flex flex-col items-center">
+                    <span>{generationStatus || 'Generating...'}</span>
+                    <span className="text-xs text-gray-500 mt-0.5">{Math.round(generationProgress)}% · Click to cancel</span>
+                  </div>
+                </button>
+                <p className="text-center text-xs text-gray-600">
+                  AI generation typically takes 30-60 seconds. Please be patient.
+                </p>
+              </div>
+            )}
 
             {credits < numImages && !isGenerating && (
               <div className="mt-2 flex items-center gap-2 justify-center text-xs text-red-400">
