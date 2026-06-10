@@ -129,32 +129,29 @@ export function GeneratorSection() {
     isGeneratingRef.current = true;
 
     setIsGenerating(true);
-    setGenerationProgress(0);
-    setGenerationStatus('Initializing AI...');
+    setGenerationProgress(5);
+    setGenerationStatus('Connecting to AI...');
 
     // Create abort controller
     abortControllerRef.current = new AbortController();
     const { signal } = abortControllerRef.current;
 
-    // Auto-abort after 2 minutes
+    // Auto-abort after 3 minutes (generous timeout since we use streaming keepalives)
     const timeoutId = setTimeout(() => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-    }, 120000);
+    }, 180000);
 
-    // Animate progress
-    let progressVal = 0;
+    // Slow simulated progress that only moves when we don't get real updates
+    let progressVal = 5;
     progressIntervalRef.current = setInterval(() => {
-      progressVal = Math.min(85, progressVal + Math.random() * 3);
+      progressVal = Math.min(85, progressVal + Math.random() * 1.5);
       setGenerationProgress(progressVal);
+    }, 800);
 
-      // Update status messages
-      if (progressVal > 10 && progressVal < 30) setGenerationStatus('Understanding your prompt...');
-      else if (progressVal >= 30 && progressVal < 50) setGenerationStatus('Creating composition...');
-      else if (progressVal >= 50 && progressVal < 70) setGenerationStatus('Rendering details...');
-      else if (progressVal >= 70) setGenerationStatus('Finalizing image...');
-    }, 600);
+    let receivedImageCount = 0;
+    let hasError = false;
 
     try {
       const response = await fetch('/api/generate', {
@@ -170,8 +167,7 @@ export function GeneratorSection() {
         signal,
       });
 
-      clearTimeout(timeoutId);
-
+      // Handle non-streaming error responses (e.g. 400 bad request)
       if (!response.ok) {
         let errorMsg = 'Generation failed';
         try {
@@ -181,52 +177,119 @@ export function GeneratorSection() {
         throw new Error(errorMsg);
       }
 
-      const data = await response.json();
+      // Process the streaming response
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream');
 
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-      setGenerationProgress(95);
-      setGenerationStatus('Image ready!');
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      const validImages = (data.images || []).filter(
-        (img: { base64?: string; url?: string }) => img.base64 || img.url
-      );
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      if (validImages.length === 0) {
-        throw new Error('AI service returned empty results. Please try again.');
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse newline-delimited JSON messages
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          try {
+            const msg = JSON.parse(trimmed);
+
+            if (msg.type === 'progress') {
+              // Update status based on server progress
+              const data = msg.data as { status?: string; message?: string; current?: number; total?: number };
+              if (data?.status === 'initializing') {
+                setGenerationStatus('Connecting to AI service...');
+                progressVal = 10;
+                setGenerationProgress(10);
+              } else if (data?.status === 'generating') {
+                const statusText = data.message || 'Creating your image...';
+                setGenerationStatus(statusText);
+                if (data.current && data.total) {
+                  progressVal = 20 + ((data.current - 1) / data.total) * 50;
+                }
+                setGenerationProgress(progressVal);
+              }
+              // heartbeat - just ignore, keeps connection alive
+            } else if (msg.type === 'image') {
+              // Got an image! Add it immediately
+              receivedImageCount++;
+              const img = msg.data as { id: string; base64: string; url?: string; prompt: string; style: string; size: string; timestamp: number };
+
+              if (img.base64 || img.url) {
+                addGeneratedImage({
+                  id: img.id,
+                  base64: img.base64 || '',
+                  url: img.url || '',
+                  prompt: img.prompt,
+                  style: img.style as StylePreset,
+                  size: img.size as ImageSize,
+                  timestamp: img.timestamp,
+                });
+              }
+
+              progressVal = 20 + (receivedImageCount / numImages) * 60;
+              setGenerationProgress(progressVal);
+              setGenerationStatus(
+                numImages > 1
+                  ? `Image ${receivedImageCount} of ${numImages} ready!`
+                  : 'Image ready!'
+              );
+            } else if (msg.type === 'complete') {
+              // Generation complete
+              if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+              setGenerationProgress(100);
+              setGenerationStatus('Done!');
+
+              const data = msg.data as { creditsUsed: number };
+              deductCredits(data.creditsUsed);
+
+              addPromptHistory({
+                id: `ph_${Date.now()}`,
+                prompt,
+                style: selectedStyle,
+                timestamp: Date.now(),
+              });
+
+              toast({
+                title: 'Image Generated!',
+                description: `${receivedImageCount} image${receivedImageCount > 1 ? 's' : ''} created successfully.`,
+              });
+
+              // Scroll to gallery
+              setTimeout(() => {
+                document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
+              }, 600);
+
+            } else if (msg.type === 'error') {
+              hasError = true;
+              const data = msg.data as { error: string };
+              toast({
+                title: 'Generation Failed',
+                description: data.error || 'Something went wrong. Please try again.',
+                variant: 'destructive',
+              });
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
       }
 
-      setGenerationProgress(100);
-
-      validImages.forEach((img: { id: string; base64: string; url?: string; prompt: string; style: string; size: string; timestamp: number }) => {
-        addGeneratedImage({
-          id: img.id,
-          base64: img.base64 || '',
-          url: img.url || '',
-          prompt: img.prompt,
-          style: img.style as StylePreset,
-          size: img.size as ImageSize,
-          timestamp: img.timestamp,
+      // If we didn't receive any images and no error was sent, show generic error
+      if (receivedImageCount === 0 && !hasError) {
+        toast({
+          title: 'Generation Failed',
+          description: 'No images were generated. Please try again.',
+          variant: 'destructive',
         });
-      });
-
-      deductCredits(validImages.length);
-
-      addPromptHistory({
-        id: `ph_${Date.now()}`,
-        prompt,
-        style: selectedStyle,
-        timestamp: Date.now(),
-      });
-
-      toast({
-        title: 'Image Generated!',
-        description: `${validImages.length} image${validImages.length > 1 ? 's' : ''} created successfully.`,
-      });
-
-      // Scroll to gallery
-      setTimeout(() => {
-        document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
-      }, 600);
+      }
 
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
