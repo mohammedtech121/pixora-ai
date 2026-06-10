@@ -136,19 +136,19 @@ export function GeneratorSection() {
     abortControllerRef.current = new AbortController();
     const { signal } = abortControllerRef.current;
 
-    // Auto-abort after 3 minutes (generous timeout since we use streaming keepalives)
+    // Auto-abort after 3 minutes
     const timeoutId = setTimeout(() => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     }, 180000);
 
-    // Slow simulated progress that only moves when we don't get real updates
+    // Slow simulated progress — overridden by real SSE progress
     let progressVal = 5;
     progressIntervalRef.current = setInterval(() => {
       progressVal = Math.min(85, progressVal + Math.random() * 1.5);
       setGenerationProgress(progressVal);
-    }, 800);
+    }, 1000);
 
     let receivedImageCount = 0;
     let hasError = false;
@@ -167,7 +167,7 @@ export function GeneratorSection() {
         signal,
       });
 
-      // Handle non-streaming error responses (e.g. 400 bad request)
+      // Handle non-streaming error responses (400, 503, etc.)
       if (!response.ok) {
         let errorMsg = 'Generation failed';
         try {
@@ -177,7 +177,7 @@ export function GeneratorSection() {
         throw new Error(errorMsg);
       }
 
-      // Process the streaming response
+      // Process Server-Sent Events stream
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
 
@@ -190,99 +190,93 @@ export function GeneratorSection() {
 
         buffer += decoder.decode(value, { stream: true });
 
-        // Parse newline-delimited JSON messages
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+        // Split by double newlines (SSE event boundary)
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
+        for (const event of events) {
+          const lines = event.split('\n');
+          for (const line of lines) {
+            // Skip heartbeat comments
+            if (line.startsWith(': ')) continue;
+            if (!line.startsWith('data: ')) continue;
 
-          try {
-            const msg = JSON.parse(trimmed);
+            const jsonStr = line.slice(6); // Remove "data: " prefix
+            if (!jsonStr.trim()) continue;
 
-            if (msg.type === 'progress') {
-              // Update status based on server progress
-              const data = msg.data as { status?: string; message?: string; current?: number; total?: number };
-              if (data?.status === 'initializing') {
-                setGenerationStatus('Connecting to AI service...');
-                progressVal = 10;
-                setGenerationProgress(10);
-              } else if (data?.status === 'generating') {
-                const statusText = data.message || 'Creating your image...';
-                setGenerationStatus(statusText);
-                if (data.current && data.total) {
-                  progressVal = 20 + ((data.current - 1) / data.total) * 50;
+            try {
+              const msg = JSON.parse(jsonStr);
+
+              if (msg.type === 'progress') {
+                if (msg.status === 'initializing') {
+                  setGenerationStatus('Connecting to AI service...');
+                  setGenerationProgress(10);
+                } else if (msg.status === 'generating') {
+                  setGenerationStatus(msg.message || 'Creating your image...');
+                  if (msg.current && msg.total) {
+                    progressVal = 15 + ((msg.current - 1) / msg.total) * 50;
+                    setGenerationProgress(progressVal);
+                  }
                 }
+              } else if (msg.type === 'image') {
+                receivedImageCount++;
+                const img = msg.data;
+                if (img && (img.base64 || img.url)) {
+                  addGeneratedImage({
+                    id: img.id,
+                    base64: img.base64 || '',
+                    url: img.url || '',
+                    prompt: img.prompt,
+                    style: img.style as StylePreset,
+                    size: img.size as ImageSize,
+                    timestamp: img.timestamp,
+                  });
+                }
+                progressVal = 15 + (receivedImageCount / numImages) * 65;
                 setGenerationProgress(progressVal);
-              }
-              // heartbeat - just ignore, keeps connection alive
-            } else if (msg.type === 'image') {
-              // Got an image! Add it immediately
-              receivedImageCount++;
-              const img = msg.data as { id: string; base64: string; url?: string; prompt: string; style: string; size: string; timestamp: number };
+                setGenerationStatus(
+                  numImages > 1
+                    ? `Image ${receivedImageCount} of ${numImages} ready!`
+                    : 'Image ready!'
+                );
+              } else if (msg.type === 'complete') {
+                if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+                setGenerationProgress(100);
+                setGenerationStatus('Done!');
 
-              if (img.base64 || img.url) {
-                addGeneratedImage({
-                  id: img.id,
-                  base64: img.base64 || '',
-                  url: img.url || '',
-                  prompt: img.prompt,
-                  style: img.style as StylePreset,
-                  size: img.size as ImageSize,
-                  timestamp: img.timestamp,
+                deductCredits(msg.creditsUsed);
+
+                addPromptHistory({
+                  id: `ph_${Date.now()}`,
+                  prompt,
+                  style: selectedStyle,
+                  timestamp: Date.now(),
+                });
+
+                toast({
+                  title: 'Image Generated!',
+                  description: `${receivedImageCount} image${receivedImageCount > 1 ? 's' : ''} created successfully.`,
+                });
+
+                setTimeout(() => {
+                  document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
+                }, 600);
+
+              } else if (msg.type === 'error') {
+                hasError = true;
+                toast({
+                  title: 'Generation Failed',
+                  description: msg.error || 'Something went wrong. Please try again.',
+                  variant: 'destructive',
                 });
               }
-
-              progressVal = 20 + (receivedImageCount / numImages) * 60;
-              setGenerationProgress(progressVal);
-              setGenerationStatus(
-                numImages > 1
-                  ? `Image ${receivedImageCount} of ${numImages} ready!`
-                  : 'Image ready!'
-              );
-            } else if (msg.type === 'complete') {
-              // Generation complete
-              if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-              setGenerationProgress(100);
-              setGenerationStatus('Done!');
-
-              const data = msg.data as { creditsUsed: number };
-              deductCredits(data.creditsUsed);
-
-              addPromptHistory({
-                id: `ph_${Date.now()}`,
-                prompt,
-                style: selectedStyle,
-                timestamp: Date.now(),
-              });
-
-              toast({
-                title: 'Image Generated!',
-                description: `${receivedImageCount} image${receivedImageCount > 1 ? 's' : ''} created successfully.`,
-              });
-
-              // Scroll to gallery
-              setTimeout(() => {
-                document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
-              }, 600);
-
-            } else if (msg.type === 'error') {
-              hasError = true;
-              const data = msg.data as { error: string };
-              toast({
-                title: 'Generation Failed',
-                description: data.error || 'Something went wrong. Please try again.',
-                variant: 'destructive',
-              });
+            } catch {
+              // Skip malformed JSON
             }
-          } catch {
-            // Skip malformed JSON lines
           }
         }
       }
 
-      // If we didn't receive any images and no error was sent, show generic error
       if (receivedImageCount === 0 && !hasError) {
         toast({
           title: 'Generation Failed',
