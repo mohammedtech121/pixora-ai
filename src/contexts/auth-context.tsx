@@ -23,7 +23,7 @@ interface UserData {
   photoURL: string | null;
   phoneNumber: string | null;
   credits: number;
-  plan: 'free' | 'pro' | 'enterprise';
+  plan: 'free' | 'starter' | 'pro';
   createdAt: unknown;
   updatedAt: unknown;
 }
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         displayName: displayName || firebaseUser.displayName || firebaseUser.phoneNumber || 'User',
         photoURL: firebaseUser.photoURL || null,
         phoneNumber: firebaseUser.phoneNumber || null,
-        credits: 50,
+        credits: 10,
         plan: 'free',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

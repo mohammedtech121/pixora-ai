@@ -229,7 +229,7 @@ export default function AuthPage() {
                 transition={{ duration: 0.3 }}
               >
                 <h1 className="text-2xl font-bold text-white mb-2">Welcome to Pixora</h1>
-                <p className="text-gray-400 text-sm mb-6">Sign in with your phone number to get 50 free credits</p>
+                <p className="text-gray-400 text-sm mb-6">Sign in with your phone number to get 10 free credits</p>
 
                 {/* Anti-abuse badge */}
                 <div className="mb-6 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
@@ -240,7 +240,7 @@ export default function AuthPage() {
                 {/* Free credits badge */}
                 <div className="mb-6 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
                   <Zap className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span className="text-sm text-amber-300 font-medium">50 free credits on signup</span>
+                  <span className="text-sm text-amber-300 font-medium">10 free credits on signup</span>
                 </div>
 
                 {error && (

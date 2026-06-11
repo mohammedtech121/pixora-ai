@@ -124,7 +124,7 @@ export const useAppStore = create<AppState>((set) => ({
   promptHistory: [],
 
   // Credits
-  credits: 50,
+  credits: 10,
 
   // User
   user: null,

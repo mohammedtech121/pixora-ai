@@ -11,15 +11,18 @@ import { useAppStore, type StylePreset, type ImageSize } from '@/store/use-app-s
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from '@/hooks/use-toast';
 
-const styleOptions: { id: StylePreset; label: string; icon: React.ReactNode; gradient: string; desc: string }[] = [
-  { id: 'realistic', label: 'Realistic', icon: <Camera className="w-4 h-4" />, gradient: 'from-slate-400 via-gray-500 to-zinc-600', desc: 'Photo-real output' },
-  { id: 'anime', label: 'Anime', icon: <Wind className="w-4 h-4" />, gradient: 'from-pink-500 via-rose-500 to-red-500', desc: 'Japanese animation' },
-  { id: 'cinematic', label: 'Cinematic', icon: <Film className="w-4 h-4" />, gradient: 'from-amber-400 via-orange-500 to-red-500', desc: 'Movie-like scenes' },
-  { id: '3d', label: '3D Render', icon: <Box className="w-4 h-4" />, gradient: 'from-emerald-400 via-teal-500 to-cyan-600', desc: '3D visualization' },
-  { id: 'fantasy', label: 'Fantasy', icon: <TreePine className="w-4 h-4" />, gradient: 'from-violet-600 via-purple-500 to-fuchsia-500', desc: 'Magical worlds' },
-  { id: 'cyberpunk', label: 'Cyberpunk', icon: <Cpu className="w-4 h-4" />, gradient: 'from-cyan-500 via-blue-500 to-purple-600', desc: 'Neon future' },
-  { id: 'pixar', label: 'Pixar', icon: <Palette className="w-4 h-4" />, gradient: 'from-yellow-400 via-amber-500 to-orange-500', desc: 'Animated style' },
-  { id: 'ghibli', label: 'Ghibli', icon: <Ghost className="w-4 h-4" />, gradient: 'from-green-400 via-emerald-500 to-teal-600', desc: 'Studio magic' },
+const FREE_STYLES: StylePreset[] = ['realistic', 'anime', 'cinematic', '3d'];
+const FREE_SIZE: ImageSize = '1024x1024';
+
+const styleOptions: { id: StylePreset; label: string; icon: React.ReactNode; gradient: string; desc: string; premium: boolean }[] = [
+  { id: 'realistic', label: 'Realistic', icon: <Camera className="w-4 h-4" />, gradient: 'from-slate-400 via-gray-500 to-zinc-600', desc: 'Photo-real output', premium: false },
+  { id: 'anime', label: 'Anime', icon: <Wind className="w-4 h-4" />, gradient: 'from-pink-500 via-rose-500 to-red-500', desc: 'Japanese animation', premium: false },
+  { id: 'cinematic', label: 'Cinematic', icon: <Film className="w-4 h-4" />, gradient: 'from-amber-400 via-orange-500 to-red-500', desc: 'Movie-like scenes', premium: false },
+  { id: '3d', label: '3D Render', icon: <Box className="w-4 h-4" />, gradient: 'from-emerald-400 via-teal-500 to-cyan-600', desc: '3D visualization', premium: false },
+  { id: 'fantasy', label: 'Fantasy', icon: <TreePine className="w-4 h-4" />, gradient: 'from-violet-600 via-purple-500 to-fuchsia-500', desc: 'Magical worlds', premium: true },
+  { id: 'cyberpunk', label: 'Cyberpunk', icon: <Cpu className="w-4 h-4" />, gradient: 'from-cyan-500 via-blue-500 to-purple-600', desc: 'Neon future', premium: true },
+  { id: 'pixar', label: 'Pixar', icon: <Palette className="w-4 h-4" />, gradient: 'from-yellow-400 via-amber-500 to-orange-500', desc: 'Animated style', premium: true },
+  { id: 'ghibli', label: 'Ghibli', icon: <Ghost className="w-4 h-4" />, gradient: 'from-green-400 via-emerald-500 to-teal-600', desc: 'Studio magic', premium: true },
 ];
 
 const sizeOptions: { id: ImageSize; label: string; aspect: string; desc: string }[] = [
@@ -53,7 +56,7 @@ export function GeneratorSection() {
     addGeneratedImage, addPromptHistory,
   } = useAppStore();
 
-  const { user, loading: authLoading } = useAuth();
+  const { user, userData, loading: authLoading } = useAuth();
 
   const [promptPlaceholder, setPromptPlaceholder] = useState(placeholderPrompts[0]);
   const [enhancing, setEnhancing] = useState(false);
@@ -310,9 +313,11 @@ export function GeneratorSection() {
         });
       } else {
         const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+        // Check if it's an upgrade-required error
+        const isUpgradeError = message.includes('Upgrade to unlock') || message.includes('requires a Starter or Pro plan');
         toast({
-          title: 'Generation Failed',
-          description: message,
+          title: isUpgradeError ? 'Upgrade Required' : 'Generation Failed',
+          description: isUpgradeError ? message + ' Visit Pricing to upgrade your plan.' : message,
           variant: 'destructive',
         });
       }
@@ -364,7 +369,7 @@ export function GeneratorSection() {
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">Verify Your Phone to Start Creating</h3>
               <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
-                Join Pixora.ai with your phone number and get 50 free credits to generate stunning AI images.
+                Join Pixora.ai with your phone number and get 10 free credits to generate stunning AI images.
               </p>
               <div className="mb-6 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 max-w-sm mx-auto">
                 <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -383,7 +388,7 @@ export function GeneratorSection() {
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] hover:text-white font-medium text-sm transition-all duration-200"
                 >
                   <Sparkles className="w-4 h-4 text-violet-400" />
-                  Get 50 Free Credits
+                  Get 10 Free Credits
                 </a>
               </div>
             </div>
@@ -430,15 +435,28 @@ export function GeneratorSection() {
 
             {/* Negative Prompt Toggle */}
             <button
-              onClick={() => setShowNegativePrompt(!showNegativePrompt)}
+              onClick={() => {
+                if (userData?.plan === 'free' || !userData?.plan) {
+                  toast({
+                    title: 'Premium Feature',
+                    description: 'Negative prompts require Starter or Pro plan. Upgrade to unlock this feature.',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+                setShowNegativePrompt(!showNegativePrompt);
+              }}
               className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             >
               {showNegativePrompt ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               Negative Prompt
+              {(userData?.plan === 'free' || !userData?.plan) && (
+                <Lock className="w-3 h-3 text-amber-400/60" />
+              )}
             </button>
 
             <AnimatePresence>
-              {showNegativePrompt && (
+              {showNegativePrompt && (userData?.plan !== 'free' && userData?.plan) && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -479,37 +497,62 @@ export function GeneratorSection() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="glass-card p-6"
           >
-            <label className="text-sm font-medium text-gray-300 mb-4 block">Style</label>
+            <label className="text-sm font-medium text-gray-300 mb-4 block flex items-center gap-2">
+              Style
+              {(userData?.plan === 'free' || !userData?.plan) && (
+                <span className="text-[10px] text-violet-400/70 bg-violet-500/10 px-2 py-0.5 rounded-full">4 of 8 on Free</span>
+              )}
+            </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {styleOptions.map((style) => (
-                <motion.button
-                  key={style.id}
-                  onClick={() => setSelectedStyle(style.id)}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  disabled={isGenerating}
-                  className={`relative p-3 rounded-xl border transition-all duration-200 text-left group disabled:opacity-50 ${
-                    selectedStyle === style.id
-                      ? 'border-violet-500/50 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.2)]'
-                      : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
-                  }`}
-                >
-                  <div className={`w-full h-12 rounded-lg bg-gradient-to-br ${style.gradient} mb-2 opacity-60 group-hover:opacity-80 transition-opacity`} />
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-gray-400 group-hover:text-gray-300 transition-colors">{style.icon}</span>
-                    <span className="text-xs font-medium text-gray-300">{style.label}</span>
-                  </div>
-                  <span className="text-[10px] text-gray-500">{style.desc}</span>
-                  {selectedStyle === style.id && (
-                    <motion.div
-                      layoutId="style-indicator"
-                      className="absolute top-2 right-2 w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center"
-                    >
-                      <Check className="w-2.5 h-2.5 text-white" />
-                    </motion.div>
-                  )}
-                </motion.button>
-              ))}
+              {styleOptions.map((style) => {
+                const isPremium = style.premium && (userData?.plan === 'free' || !userData?.plan);
+                return (
+                  <motion.button
+                    key={style.id}
+                    onClick={() => {
+                      if (isPremium) {
+                        toast({
+                          title: 'Premium Style',
+                          description: `"${style.label}" requires Starter or Pro plan. Upgrade to unlock all styles.`,
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
+                      setSelectedStyle(style.id);
+                    }}
+                    whileHover={{ scale: isPremium ? 1 : 1.02 }}
+                    whileTap={{ scale: isPremium ? 1 : 0.98 }}
+                    disabled={isGenerating}
+                    className={`relative p-3 rounded-xl border transition-all duration-200 text-left group disabled:opacity-50 ${
+                      isPremium
+                        ? 'border-amber-500/20 bg-amber-500/[0.03] cursor-not-allowed'
+                        : selectedStyle === style.id
+                          ? 'border-violet-500/50 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.2)]'
+                          : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
+                    }`}
+                  >
+                    <div className={`w-full h-12 rounded-lg bg-gradient-to-br ${style.gradient} mb-2 ${isPremium ? 'opacity-20' : 'opacity-60 group-hover:opacity-80'} transition-opacity`} />
+                    <div className="flex items-center gap-1.5">
+                      <span className={`${isPremium ? 'text-gray-600' : 'text-gray-400 group-hover:text-gray-300'} transition-colors`}>{style.icon}</span>
+                      <span className={`text-xs font-medium ${isPremium ? 'text-gray-500' : 'text-gray-300'}`}>{style.label}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500">{style.desc}</span>
+                    {isPremium && (
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                        <Lock className="w-2.5 h-2.5 text-amber-400" />
+                      </div>
+                    )}
+                    {selectedStyle === style.id && !isPremium && (
+                      <motion.div
+                        layoutId="style-indicator"
+                        className="absolute top-2 right-2 w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center"
+                      >
+                        <Check className="w-2.5 h-2.5 text-white" />
+                      </motion.div>
+                    )}
+                  </motion.button>
+                );
+              })}
             </div>
           </motion.div>
 
@@ -523,36 +566,57 @@ export function GeneratorSection() {
               transition={{ duration: 0.5, delay: 0.3 }}
               className="glass-card p-6"
             >
-              <label className="text-sm font-medium text-gray-300 mb-4 block">Size</label>
+              <label className="text-sm font-medium text-gray-300 mb-4 block flex items-center gap-2">
+                Size
+                {(userData?.plan === 'free' || !userData?.plan) && (
+                  <span className="text-[10px] text-violet-400/70 bg-violet-500/10 px-2 py-0.5 rounded-full">1:1 only on Free</span>
+                )}
+              </label>
               <div className="grid grid-cols-3 gap-2">
-                {sizeOptions.map((size) => (
-                  <button
-                    key={size.id}
-                    onClick={() => setSelectedSize(size.id)}
-                    disabled={isGenerating}
-                    className={`p-2.5 rounded-xl border transition-all duration-200 text-center disabled:opacity-50 ${
-                      selectedSize === size.id
-                        ? 'border-violet-500/50 bg-violet-500/10'
-                        : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-center mb-1.5">
-                      <div
-                        className={`border border-current rounded-sm ${
-                          selectedSize === size.id ? 'text-violet-400' : 'text-gray-500'
-                        }`}
-                        style={{
-                          width: size.id === '768x1344' || size.id === '864x1152' ? 12 : size.id === '1344x768' || size.id === '1440x720' ? 24 : 18,
-                          height: size.id === '768x1344' || size.id === '720x1440' ? 24 : size.id === '1344x768' || size.id === '1440x720' ? 12 : 18,
-                        }}
-                      />
-                    </div>
-                    <div className={`text-xs font-medium ${selectedSize === size.id ? 'text-violet-300' : 'text-gray-400'}`}>
-                      {size.label}
-                    </div>
-                    <div className="text-[10px] text-gray-500">{size.aspect}</div>
-                  </button>
-                ))}
+                {sizeOptions.map((size) => {
+                  const isPremiumSize = size.id !== FREE_SIZE && (userData?.plan === 'free' || !userData?.plan);
+                  return (
+                    <button
+                      key={size.id}
+                      onClick={() => {
+                        if (isPremiumSize) {
+                          toast({
+                            title: 'Premium Resolution',
+                            description: `${size.aspect} (${size.desc}) requires Starter or Pro plan. Upgrade to unlock all resolutions.`,
+                            variant: 'destructive',
+                          });
+                          return;
+                        }
+                        setSelectedSize(size.id);
+                      }}
+                      disabled={isGenerating}
+                      className={`relative p-2.5 rounded-xl border transition-all duration-200 text-center disabled:opacity-50 ${
+                        isPremiumSize
+                          ? 'border-amber-500/20 bg-amber-500/[0.03] cursor-not-allowed'
+                          : selectedSize === size.id
+                            ? 'border-violet-500/50 bg-violet-500/10'
+                            : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center mb-1.5">
+                        <div
+                          className={`border border-current rounded-sm ${isPremiumSize ? 'text-gray-700' : selectedSize === size.id ? 'text-violet-400' : 'text-gray-500'}`}
+                          style={{
+                            width: size.id === '768x1344' || size.id === '864x1152' ? 12 : size.id === '1344x768' || size.id === '1440x720' ? 24 : 18,
+                            height: size.id === '768x1344' || size.id === '720x1440' ? 24 : size.id === '1344x768' || size.id === '1440x720' ? 12 : 18,
+                          }}
+                        />
+                      </div>
+                      <div className={`text-xs font-medium ${isPremiumSize ? 'text-gray-600' : selectedSize === size.id ? 'text-violet-300' : 'text-gray-400'}`}>
+                        {size.label}
+                      </div>
+                      <div className="text-[10px] text-gray-500">{size.aspect}</div>
+                      {isPremiumSize && (
+                        <Lock className="absolute top-1.5 right-1.5 w-2.5 h-2.5 text-amber-400/60" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </motion.div>
 

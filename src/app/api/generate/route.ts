@@ -64,22 +64,56 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
   }
 
-  const stylePreset = style && STYLE_PRESETS[style] ? style : 'realistic';
-  const validatedSize = size && VALID_SIZES.includes(size) ? size : '1024x1024';
+  // Plan-based restrictions
+  const FREE_STYLES = ['realistic', 'anime', 'cinematic', '3d'];
+  const FREE_SIZE = '1024x1024';
+
+  let stylePreset = style && STYLE_PRESETS[style] ? style : 'realistic';
+  let validatedSize = size && VALID_SIZES.includes(size) ? size : '1024x1024';
   const validatedNumImages = Math.min(Math.max(Number(numImages) || 1, 1), 4);
   const stylePrefix = STYLE_PRESETS[stylePreset] || '';
   const enhancedPrompt = `${stylePrefix}${prompt}${negativePrompt ? `. Avoid: ${negativePrompt}` : ''}`;
 
-  // Check user credits if userId is provided and Firebase is configured
+  // Check user credits and plan if userId is provided and Firebase is configured
   const effectiveUserId = userId || 'anonymous';
+  let userPlan = 'free';
   if (userId && isFirebaseConfigured()) {
     try {
       const db = getAdminDb();
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (userDoc.exists) {
         const userData = userDoc.data();
+        userPlan = userData.plan || 'free';
         if ((userData.credits ?? 0) < validatedNumImages) {
           return NextResponse.json({ error: 'Not enough credits' }, { status: 400 });
+        }
+
+        // Enforce plan restrictions for free users
+        if (userPlan === 'free') {
+          // Free users can only use basic styles
+          if (!FREE_STYLES.includes(stylePreset)) {
+            return NextResponse.json({
+              error: `The "${stylePreset}" style requires a Starter or Pro plan. Upgrade to unlock all styles.`,
+              upgradeRequired: true,
+              restrictedFeature: 'style',
+            }, { status: 403 });
+          }
+          // Free users can only use 1024x1024
+          if (validatedSize !== FREE_SIZE) {
+            return NextResponse.json({
+              error: `The "${validatedSize}" resolution requires a Starter or Pro plan. Upgrade to unlock all resolutions.`,
+              upgradeRequired: true,
+              restrictedFeature: 'size',
+            }, { status: 403 });
+          }
+          // Free users cannot use negative prompts
+          if (negativePrompt && negativePrompt.trim()) {
+            return NextResponse.json({
+              error: 'Negative prompts require a Starter or Pro plan. Upgrade to unlock this feature.',
+              upgradeRequired: true,
+              restrictedFeature: 'negativePrompt',
+            }, { status: 403 });
+          }
         }
       }
     } catch (error) {

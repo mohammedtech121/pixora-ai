@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         displayName: 'User',
         photoURL: null,
         phoneNumber: null,
-        credits: 50,
+        credits: 10,
         plan: 'free',
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -90,14 +90,14 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Create new user with 50 free credits
+          // Create new user with 10 free credits
           await setDoc(userRef, {
             uid,
             email: email || null,
             displayName: displayName || phoneNumber || email?.split('@')[0] || 'User',
             photoURL: photoURL || null,
             phoneNumber: phoneNumber || null,
-            credits: 50,
+            credits: 10,
             plan: 'free',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         displayName: displayName || 'User',
         photoURL: photoURL || null,
         phoneNumber: phoneNumber || null,
-        credits: 50,
+        credits: 10,
         plan: 'free',
       },
     });

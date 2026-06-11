@@ -42,7 +42,7 @@ export function Navbar() {
       const response = await fetch(`/api/credits?uid=${user.uid}`);
       if (response.ok) {
         const data = await response.json();
-        setCredits(data.credits ?? 50);
+        setCredits(data.credits ?? 10);
       }
     } catch {
       // Silently fail
@@ -58,7 +58,7 @@ export function Navbar() {
 
   const handleSignOut = async () => {
     await signOut();
-    setCredits(50);
+    setCredits(10);
   };
 
   const displayName = user?.displayName || userData?.displayName || user?.phoneNumber || user?.email?.split('@')[0] || 'User';
