@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2, Sparkles, ChevronDown, ChevronUp, Loader2,
   Camera, Film, Box, TreePine, Cpu, Palette, Ghost, Wind,
-  ImageIcon, Zap, AlertCircle, Check, RotateCcw, Lock, LogIn
+  ImageIcon, Zap, AlertCircle, Check, RotateCcw, Lock, LogIn, Phone, Shield
 } from 'lucide-react';
 import { useAppStore, type StylePreset, type ImageSize } from '@/store/use-app-store';
 import { useAuth } from '@/contexts/auth-context';
@@ -360,26 +360,30 @@ export function GeneratorSection() {
           >
             <div className="glass-card p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-6">
-                <Lock className="w-8 h-8 text-violet-400" />
+                <Phone className="w-8 h-8 text-violet-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Sign in to Start Creating</h3>
-              <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
-                Join Pixora.ai and get 50 free credits to generate stunning AI images. Create photorealistic art, anime, cinematic scenes, and more.
+              <h3 className="text-xl font-semibold text-white mb-2">Verify Your Phone to Start Creating</h3>
+              <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+                Join Pixora.ai with your phone number and get 50 free credits to generate stunning AI images.
               </p>
+              <div className="mb-6 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 max-w-sm mx-auto">
+                <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-xs text-emerald-300">One phone = one account. No fake accounts, no credit abuse.</span>
+              </div>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 <a
                   href="/auth/login"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl btn-generate text-white font-semibold text-sm hover:scale-[1.01] active:scale-[0.99] transition-all duration-300"
                 >
-                  <LogIn className="w-4 h-4" />
-                  Sign In
+                  <Phone className="w-4 h-4" />
+                  Verify Phone & Sign In
                 </a>
                 <a
-                  href="/auth/signup"
+                  href="/auth/login"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] hover:text-white font-medium text-sm transition-all duration-200"
                 >
                   <Sparkles className="w-4 h-4 text-violet-400" />
-                  Create Free Account
+                  Get 50 Free Credits
                 </a>
               </div>
             </div>

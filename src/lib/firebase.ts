@@ -8,7 +8,7 @@
  */
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, RecaptchaVerifier } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -46,4 +46,30 @@ export const auth = authInstance;
 export const googleProvider = isFirebaseConfigured ? new GoogleAuthProvider() : null;
 export const db = dbInstance;
 export const storage = storageInstance;
+
+/**
+ * Create a reCAPTCHA verifier for phone auth
+ * Must be called in browser context only
+ * The invisible reCAPTCHA renders in the given container
+ */
+export function createRecaptchaVerifier(containerOrId: string | HTMLElement = 'recaptcha-container'): RecaptchaVerifier | null {
+  if (!authInstance || !isFirebaseConfigured) return null;
+  try {
+    return new RecaptchaVerifier(authInstance, containerOrId, {
+      size: 'invisible',
+      callback: () => {
+        // reCAPTCHA solved - allow phone sign-in
+        console.log('[Firebase] reCAPTCHA verified');
+      },
+      'expired-callback': () => {
+        // Response expired. Ask user to solve reCAPTCHA again.
+        console.log('[Firebase] reCAPTCHA expired');
+      },
+    });
+  } catch (error) {
+    console.error('[Firebase] Failed to create reCAPTCHA verifier:', error);
+    return null;
+  }
+}
+
 export default app;

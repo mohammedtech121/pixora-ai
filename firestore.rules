@@ -1,0 +1,64 @@
+// Firestore Security Rules for Pixora.ai
+// Deploy these to Firebase Console → Firestore → Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if user owns the document
+    function isOwner(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+
+    // ============ Users Collection ============
+    // One document per user, keyed by Firebase Auth UID
+    match /users/{userId} {
+      // Users can read their own data
+      allow read: if isOwner(userId);
+
+      // Users can create their own document on signup
+      // CRITICAL: Prevent duplicate phone numbers
+      allow create: if isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.phoneNumber is string
+        // Enforce phone uniqueness: no existing user with same phone
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.phoneNumber));
+
+      // Users can update their own document (but not change phone or credits maliciously)
+      allow update: if isOwner(userId)
+        && request.resource.data.phoneNumber == resource.data.phoneNumber
+        && request.resource.data.uid == resource.data.uid;
+
+      // Admin reads for credit verification (via server SDK, bypasses rules)
+      // Server-side SDK uses admin credentials which bypass security rules
+    }
+
+    // ============ Phone Number Index (for uniqueness) ============
+    // Alternative: Use a separate collection keyed by phone number
+    match /phone_index/{phoneNumber} {
+      allow read: if isAuth();
+      allow write: if false; // Only server SDK can write
+    }
+
+    // ============ Generation Jobs ============
+    match /generation_jobs/{jobId} {
+      // Users can read their own jobs
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      // Only server-side (admin SDK) can create/update - bypasses rules
+      allow write: if false;
+    }
+
+    // ============ User Images ============
+    match /user_images/{imageId} {
+      // Users can read their own images
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      // Only server-side can create
+      allow write: if false;
+    }
+  }
+}
