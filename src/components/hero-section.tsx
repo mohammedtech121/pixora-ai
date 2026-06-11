@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, Play, Sparkles, Wand2, Image as ImageIcon } from 'lucide-react';
+import { ArrowRight, Play, Sparkles, Wand2 } from 'lucide-react';
 
 const typingTexts = [
   'A cyberpunk city at sunset with flying cars...',
@@ -46,12 +46,12 @@ function TypingAnimation() {
 }
 
 const showcaseCards = [
-  { gradient: 'from-violet-600 via-purple-500 to-fuchsia-500', label: 'Fantasy', icon: '🏰' },
-  { gradient: 'from-cyan-500 via-blue-500 to-indigo-500', label: 'Cyberpunk', icon: '🌆' },
-  { gradient: 'from-amber-400 via-orange-500 to-red-500', label: 'Cinematic', icon: '🎬' },
-  { gradient: 'from-emerald-400 via-teal-500 to-cyan-600', label: '3D Render', icon: '💎' },
-  { gradient: 'from-pink-500 via-rose-500 to-red-500', label: 'Anime', icon: '🌸' },
-  { gradient: 'from-yellow-400 via-amber-500 to-orange-500', label: 'Pixar', icon: '✨' },
+  { gradient: 'from-violet-600 via-purple-500 to-fuchsia-500', label: 'Fantasy', icon: '🏰', image: '/styles/fantasy.png' },
+  { gradient: 'from-cyan-500 via-blue-500 to-indigo-500', label: 'Cyberpunk', icon: '🌆', image: '/styles/cyberpunk.png' },
+  { gradient: 'from-amber-400 via-orange-500 to-red-500', label: 'Cinematic', icon: '🎬', image: '/styles/cinematic.png' },
+  { gradient: 'from-emerald-400 via-teal-500 to-cyan-600', label: '3D Render', icon: '💎', image: '/styles/3d.png' },
+  { gradient: 'from-pink-500 via-rose-500 to-red-500', label: 'Anime', icon: '🌸', image: '/styles/anime.png' },
+  { gradient: 'from-yellow-400 via-amber-500 to-orange-500', label: 'Pixar', icon: '✨', image: '/styles/pixar.png' },
 ];
 
 export function HeroSection() {
@@ -141,26 +141,20 @@ export function HeroSection() {
                       i === 0 ? 'md:col-span-2 md:row-span-2 md:aspect-auto' : ''
                     }`}
                   >
-                    {/* Gradient background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} opacity-60 group-hover:opacity-80 transition-opacity duration-300`} />
-
-                    {/* Pattern overlay */}
-                    <div className="absolute inset-0 opacity-20"
-                      style={{
-                        backgroundImage: `radial-gradient(circle at 25% 25%, rgba(255,255,255,0.2) 0%, transparent 50%),
-                          radial-gradient(circle at 75% 75%, rgba(255,255,255,0.1) 0%, transparent 50%)`,
-                      }}
+                    {/* Real AI-generated preview image */}
+                    <img
+                      src={card.image}
+                      alt={card.label}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
+
+                    {/* Gradient overlay for text readability */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
                     {/* Label */}
                     <div className="absolute bottom-3 left-3 flex items-center gap-2">
                       <span className="text-2xl">{card.icon}</span>
-                      <span className="text-sm font-medium text-white/90">{card.label}</span>
-                    </div>
-
-                    {/* Hover overlay */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-                      <ImageIcon className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      <span className="text-sm font-medium text-white/90 drop-shadow-lg">{card.label}</span>
                     </div>
                   </motion.div>
                 ))}

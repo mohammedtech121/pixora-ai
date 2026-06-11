@@ -1,12 +1,84 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Heart, Bookmark, ImageIcon } from 'lucide-react';
-import { useAppStore } from '@/store/use-app-store';
+import { Heart, Bookmark } from 'lucide-react';
+
+const galleryImages = [
+  {
+    id: '1',
+    src: '/gallery/fantasy-library.png',
+    prompt: 'Enchanted library with floating books and magical golden light',
+    style: 'Fantasy',
+    username: 'ArtVerse',
+    likes: 2847,
+    span: 'md:col-span-2 md:row-span-2',
+  },
+  {
+    id: '2',
+    src: '/gallery/cyberpunk-samurai.png',
+    prompt: 'Cyberpunk samurai standing on a rooftop in the rain',
+    style: 'Cyberpunk',
+    username: 'NeonDreamer',
+    likes: 3215,
+    span: '',
+  },
+  {
+    id: '3',
+    src: '/gallery/ghibli-castle.png',
+    prompt: 'Dreamy cloudscape with castles in the sky',
+    style: 'Ghibli',
+    username: 'AnimeSoul',
+    likes: 2567,
+    span: '',
+  },
+  {
+    id: '4',
+    src: '/gallery/space-nebula.png',
+    prompt: 'Deep space nebula with crystalline asteroid field',
+    style: '3D',
+    username: 'WorldBuilder',
+    likes: 4102,
+    span: 'md:col-span-2',
+  },
+  {
+    id: '5',
+    src: '/gallery/noir-detective.png',
+    prompt: 'Noir detective in a dimly lit office with rain outside',
+    style: 'Cinematic',
+    username: 'PhotoMaster',
+    likes: 1923,
+    span: '',
+  },
+  {
+    id: '6',
+    src: '/gallery/pixar-dragon.png',
+    prompt: 'Cute baby dragon learning to fly in a meadow',
+    style: 'Pixar',
+    username: 'StoryMaker',
+    likes: 1890,
+    span: 'md:row-span-2',
+  },
+  {
+    id: '7',
+    src: '/gallery/macro-dew.png',
+    prompt: 'Hyperrealistic macro shot of morning dew on spider web',
+    style: 'Realistic',
+    username: 'LensCraft',
+    likes: 3721,
+    span: '',
+  },
+  {
+    id: '8',
+    src: '/gallery/anime-warrior.png',
+    prompt: 'Anime warrior princess in ornate battle armor',
+    style: 'Anime',
+    username: 'MangaPro',
+    likes: 5432,
+    span: '',
+  },
+];
 
 export function CommunitySection() {
-  const communityImages = useAppStore((s) => s.communityImages);
-
   return (
     <section id="community" className="relative py-20 z-10">
       <div className="container mx-auto px-4 md:px-8">
@@ -27,9 +99,9 @@ export function CommunitySection() {
           </p>
         </motion.div>
 
-        {/* Bento grid */}
+        {/* Bento grid with real images */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 auto-rows-[200px] md:auto-rows-[240px]">
-          {communityImages.map((image, index) => (
+          {galleryImages.map((image, index) => (
             <motion.div
               key={image.id}
               initial={{ opacity: 0, y: 20 }}
@@ -37,29 +109,20 @@ export function CommunitySection() {
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: index * 0.05 }}
               whileHover={{ scale: 1.02 }}
-              className={`relative rounded-2xl overflow-hidden border border-white/[0.06] group cursor-pointer ${
-                index === 0 ? 'md:col-span-2 md:row-span-2' :
-                index === 3 ? 'md:col-span-2' :
-                index === 5 ? 'md:row-span-2' : ''
-              }`}
+              className={`relative rounded-2xl overflow-hidden border border-white/[0.06] group cursor-pointer ${image.span}`}
             >
-              {/* Gradient background as placeholder */}
-              <div className={`absolute inset-0 bg-gradient-to-br ${image.gradient} opacity-50 group-hover:opacity-70 transition-opacity duration-300`} />
-
-              {/* Pattern overlay */}
-              <div className="absolute inset-0 opacity-20"
-                style={{
-                  backgroundImage: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 50%)`,
-                }}
+              {/* Real AI-generated image */}
+              <img
+                src={image.src}
+                alt={image.prompt}
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
 
-              {/* Center icon */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <ImageIcon className="w-8 h-8 text-white/20" />
-              </div>
+              {/* Subtle gradient overlay at bottom for text readability */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
               {/* Hover overlay with prompt */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-colors duration-300 flex flex-col justify-between p-4 opacity-0 group-hover:opacity-100">
+              <div className="absolute inset-0 flex flex-col justify-between p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <div>
                   <p className="text-sm text-white/90 font-medium line-clamp-2">{image.prompt}</p>
                   <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md bg-white/10 text-[10px] text-white/70 uppercase">
