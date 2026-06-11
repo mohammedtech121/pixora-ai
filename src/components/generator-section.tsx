@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2, Sparkles, ChevronDown, ChevronUp, Loader2,
   Camera, Film, Box, TreePine, Cpu, Palette, Ghost, Wind,
-  ImageIcon, Zap, AlertCircle, Check, RotateCcw
+  ImageIcon, Zap, AlertCircle, Check, RotateCcw, Lock, LogIn
 } from 'lucide-react';
 import { useAppStore, type StylePreset, type ImageSize } from '@/store/use-app-store';
+import { useAuth } from '@/contexts/auth-context';
 import { toast } from '@/hooks/use-toast';
 
 const styleOptions: { id: StylePreset; label: string; icon: React.ReactNode; gradient: string; desc: string }[] = [
@@ -48,9 +49,11 @@ export function GeneratorSection() {
     isGenerating, setIsGenerating,
     generationProgress, setGenerationProgress,
     showNegativePrompt, setShowNegativePrompt,
-    credits, deductCredits,
+    credits, setCredits, deductCredits,
     addGeneratedImage, addPromptHistory,
   } = useAppStore();
+
+  const { user, loading: authLoading } = useAuth();
 
   const [promptPlaceholder, setPromptPlaceholder] = useState(placeholderPrompts[0]);
   const [enhancing, setEnhancing] = useState(false);
@@ -76,6 +79,20 @@ export function GeneratorSection() {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, []);
+
+  // Fetch credits from server when user changes
+  useEffect(() => {
+    if (user) {
+      fetch(`/api/credits?uid=${user.uid}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.credits !== undefined) {
+            setCredits(data.credits);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user, setCredits]);
 
   const handleEnhance = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -171,6 +188,7 @@ export function GeneratorSection() {
           style: selectedStyle,
           size: selectedSize,
           numImages,
+          userId: user?.uid || 'anonymous',
         }),
         signal,
       });
@@ -247,6 +265,17 @@ export function GeneratorSection() {
 
           deductCredits(lastImageCount);
 
+          // Refresh credits from server
+          if (user) {
+            try {
+              const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
+              if (creditsRes.ok) {
+                const creditsData = await creditsRes.json();
+                setCredits(creditsData.credits ?? credits - lastImageCount);
+              }
+            } catch {}
+          }
+
           addPromptHistory({
             id: `ph_${Date.now()}`,
             prompt,
@@ -291,7 +320,7 @@ export function GeneratorSection() {
       clearTimeout(timeoutId);
       cleanupGeneration();
     }
-  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, addGeneratedImage, addPromptHistory, deductCredits, cleanupGeneration, setIsGenerating, setGenerationProgress]);
+  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, user, addGeneratedImage, addPromptHistory, deductCredits, cleanupGeneration, setIsGenerating, setGenerationProgress, setCredits]);
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {
@@ -321,6 +350,41 @@ export function GeneratorSection() {
           </p>
         </motion.div>
 
+        {/* Auth gate: show sign-in prompt if not logged in */}
+        {!user && !authLoading ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="max-w-4xl mx-auto"
+          >
+            <div className="glass-card p-12 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-6">
+                <Lock className="w-8 h-8 text-violet-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">Sign in to Start Creating</h3>
+              <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+                Join Pixora.ai and get 50 free credits to generate stunning AI images. Create photorealistic art, anime, cinematic scenes, and more.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <a
+                  href="/auth/login"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl btn-generate text-white font-semibold text-sm hover:scale-[1.01] active:scale-[0.99] transition-all duration-300"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Sign In
+                </a>
+                <a
+                  href="/auth/signup"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] hover:text-white font-medium text-sm transition-all duration-200"
+                >
+                  <Sparkles className="w-4 h-4 text-violet-400" />
+                  Create Free Account
+                </a>
+              </div>
+            </div>
+          </motion.div>
+        ) : (
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Prompt Box */}
           <motion.div
@@ -583,6 +647,7 @@ export function GeneratorSection() {
             )}
           </motion.div>
         </div>
+        )}
       </div>
     </section>
   );

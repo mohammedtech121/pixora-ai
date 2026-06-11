@@ -1,16 +1,20 @@
 /**
- * Storage abstraction layer
- * - Dev: uses global in-memory job store + local filesystem for images
- * - Prod (Vercel): uses Vercel Blob for images + Vercel KV for job status
+ * Storage abstraction layer — Firebase Edition
+ * - Job Store: Uses Firestore `generation_jobs` collection
+ * - Image Storage: Uses Firebase Storage `generated/` folder
+ * - Fallback: In-memory job store + local filesystem for dev without Firebase
  */
 
 import { writeFile, readFile, stat, mkdir } from 'fs/promises';
 import path from 'path';
+import { getAdminDb, getAdminStorage, isFirebaseConfigured } from '@/lib/firebase-admin';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase-admin/firestore';
 
-// ============ Job Store ============
+// ============ Types ============
 
 interface GenerationJob {
   id: string;
+  userId: string;
   status: 'processing' | 'complete' | 'error';
   prompt: string;
   style: string;
@@ -30,59 +34,102 @@ interface GenerationJob {
 
 export type { GenerationJob };
 
-// Use globalThis to persist across HMR and route modules in dev
+// ============ In-memory fallback (dev mode) ============
+
 const getGlobalStore = (): Map<string, GenerationJob> => {
-  if (!(globalThis as Record<string, unknown>).__neuraJobStore) {
-    (globalThis as Record<string, unknown>).__neuraJobStore = new Map<string, GenerationJob>();
+  if (!(globalThis as Record<string, unknown>).__pixoraJobStore) {
+    (globalThis as Record<string, unknown>).__pixoraJobStore = new Map<string, GenerationJob>();
   }
-  return (globalThis as Record<string, unknown>).__neuraJobStore as Map<string, GenerationJob>;
+  return (globalThis as Record<string, unknown>).__pixoraJobStore as Map<string, GenerationJob>;
 };
 
+// ============ Job Store ============
+
 export async function getJob(jobId: string): Promise<GenerationJob | null> {
-  // Try Vercel KV first (prod)
-  if (process.env.KV_REST_API_URL) {
+  // Try Firestore first (if Firebase is configured)
+  if (isFirebaseConfigured()) {
     try {
-      const { kv } = await import('@vercel/kv');
-      const job = await kv.get<GenerationJob>(`job:${jobId}`);
-      if (job) return job;
-    } catch {
-      // Fall through to in-memory
+      const db = getAdminDb();
+      const jobDoc = await getDoc(doc(db, 'generation_jobs', jobId));
+      if (jobDoc.exists) {
+        return jobDoc.data() as GenerationJob;
+      }
+    } catch (error) {
+      console.error('[Storage] Firestore getJob error, falling back to in-memory:', error);
     }
   }
 
-  // In-memory fallback (dev)
+  // In-memory fallback
   return getGlobalStore().get(jobId) || null;
 }
 
 export async function setJob(jobId: string, job: GenerationJob): Promise<void> {
-  // Save to Vercel KV (prod)
-  if (process.env.KV_REST_API_URL) {
+  // Save to Firestore (if configured)
+  if (isFirebaseConfigured()) {
     try {
-      const { kv } = await import('@vercel/kv');
-      await kv.set(`job:${jobId}`, job, { ex: 3600 }); // Expire after 1 hour
-    } catch {
-      // Fall through to in-memory
+      const db = getAdminDb();
+      await setDoc(doc(db, 'generation_jobs', jobId), job);
+    } catch (error) {
+      console.error('[Storage] Firestore setJob error, falling back to in-memory:', error);
     }
   }
 
-  // Always save to in-memory as well (for dev / fallback)
+  // Always save to in-memory as well (for fallback)
   getGlobalStore().set(jobId, job);
+
+  // Auto-expire old jobs from in-memory store (keep last 100)
+  const store = getGlobalStore();
+  if (store.size > 100) {
+    const entries = Array.from(store.entries()).sort((a, b) => a[1].createdAt - b[1].createdAt);
+    const toDelete = entries.slice(0, entries.length - 100);
+    for (const [key] of toDelete) {
+      store.delete(key);
+    }
+  }
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  // Delete from Firestore
+  if (isFirebaseConfigured()) {
+    try {
+      const db = getAdminDb();
+      await deleteDoc(doc(db, 'generation_jobs', jobId));
+    } catch (error) {
+      console.error('[Storage] Firestore deleteJob error:', error);
+    }
+  }
+
+  // Delete from in-memory
+  getGlobalStore().delete(jobId);
 }
 
 // ============ Image Storage ============
 
 export async function saveImage(imageId: string, buffer: Buffer): Promise<string> {
-  // Try Vercel Blob first (prod)
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  // Try Firebase Storage first (if configured)
+  if (isFirebaseConfigured()) {
     try {
-      const { put } = await import('@vercel/blob');
-      const blob = await put(`generated/${imageId}.jpg`, buffer, {
-        access: 'public',
-        contentType: 'image/jpeg',
+      const storage = getAdminStorage();
+      const bucket = storage.bucket();
+      const file = bucket.file(`generated/${imageId}.jpg`);
+
+      await file.save(buffer, {
+        metadata: {
+          contentType: 'image/jpeg',
+          metadata: {
+            imageId,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        public: true, // Make publicly accessible
       });
-      return blob.url;
-    } catch {
-      // Fall through to local
+
+      // Get the public URL
+      const publicUrl = file.publicUrl();
+      console.log(`[Storage] Image saved to Firebase Storage: ${imageId}`);
+      return publicUrl;
+    } catch (error) {
+      console.error('[Storage] Firebase Storage save error, falling back to local:', error);
     }
   }
 
@@ -91,16 +138,30 @@ export async function saveImage(imageId: string, buffer: Buffer): Promise<string
   await mkdir(imagesDir, { recursive: true });
   const filePath = path.join(imagesDir, `${imageId}.jpg`);
   await writeFile(filePath, buffer);
+  console.log(`[Storage] Image saved locally: ${imageId}`);
   return `/api/image/${imageId}`;
 }
 
 export async function getImage(imageId: string): Promise<Buffer | null> {
-  // Sanitize imageId to prevent directory traversal
+  // Try Firebase Storage first (if configured)
+  if (isFirebaseConfigured()) {
+    try {
+      const storage = getAdminStorage();
+      const bucket = storage.bucket();
+      const file = bucket.file(`generated/${imageId}.jpg`);
+
+      const [exists] = await file.exists();
+      if (exists) {
+        const [buffer] = await file.download();
+        return buffer as Buffer;
+      }
+    } catch (error) {
+      console.error('[Storage] Firebase Storage download error, falling back to local:', error);
+    }
+  }
+
+  // Local fallback
   const safeId = imageId.replace(/[^a-zA-Z0-9_-]/g, '');
-
-  // On Vercel Blob, images are served directly from blob URL — this endpoint isn't needed
-  // This function is only used for local dev image serving
-
   try {
     const filePath = path.join(process.cwd(), 'generated-images', `${safeId}.jpg`);
     const fileStat = await stat(filePath);
@@ -109,4 +170,22 @@ export async function getImage(imageId: string): Promise<Buffer | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Get the Firebase Storage public URL for an image
+ * Returns null if Firebase is not configured
+ */
+export function getImageUrl(imageId: string): string | null {
+  if (isFirebaseConfigured()) {
+    try {
+      const storage = getAdminStorage();
+      const bucket = storage.bucket();
+      const file = bucket.file(`generated/${imageId}.jpg`);
+      return file.publicUrl();
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }

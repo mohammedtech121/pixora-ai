@@ -1,61 +1,37 @@
-# Worklog
+# Pixora.ai Worklog
 
 ---
 Task ID: 1
-Agent: Main Agent
-Task: Initialize project and install dependencies
+Agent: Main
+Task: Rebrand NeuraCanvas AI → Pixora.ai and integrate Firebase backend
 
 Work Log:
-- Ran fullstack init script
-- Installed gsap, @gsap/react, lenis packages
-- Verified project structure and existing dependencies
+- Installed firebase and firebase-admin npm packages
+- Rebranded all references from "NeuraCanvas AI" to "Pixora.ai" across: layout.tsx, navbar.tsx, footer.tsx, storage.ts, package.json
+- Created src/lib/firebase.ts — Firebase Client SDK with lazy initialization and null-safe when unconfigured
+- Created src/lib/firebase-admin.ts — Firebase Admin SDK for server-side API routes with token verification
+- Created src/contexts/auth-context.tsx — React Auth Provider with email/password + Google OAuth
+- Created src/app/auth/login/page.tsx — Beautiful glassmorphism login page with aurora effects
+- Created src/app/auth/signup/page.tsx — Glassmorphism signup page with 50 free credits on signup
+- Created src/app/api/auth/user/route.ts — GET/POST user data from Firestore
+- Created src/app/api/credits/route.ts — GET credit balance, POST deduct credits
+- Rewrote src/lib/storage.ts — Full Firebase integration: Firestore for job store, Firebase Storage for images, with dev fallback
+- Updated src/app/api/generate/route.ts — Added userId, Firestore credit check/deduction, user_images collection writes
+- Updated src/app/api/generate/status/route.ts — Reads from Firestore
+- Updated src/app/api/image/[imageId]/route.ts — Redirects to Firebase Storage URL with local fallback
+- Updated src/store/use-app-store.ts — Added user field + setUser action
+- Updated src/components/navbar.tsx — Full auth UI: avatar + dropdown when logged in, "Sign In" button when not, credits from Firestore with periodic polling
+- Updated src/components/generator-section.tsx — Auth gate: locked state with sign-in prompt when not logged in, credit sync with server
+- Updated src/app/layout.tsx — Wrapped children with AuthProvider, updated metadata for Pixora.ai
+- Updated next.config.ts — Removed output: "standalone", added Firebase Storage remote image patterns
+- Created .env.local.example with all Firebase env vars
+- Fixed package.json build script (removed standalone cp commands for Vercel)
+- Build passes successfully, all pages return 200
 
 Stage Summary:
-- Project initialized with Next.js 16, TypeScript, Tailwind CSS 4, shadcn/ui
-- All required dependencies available: framer-motion, gsap, zustand, z-ai-web-dev-sdk
-
----
-Task ID: 2
-Agent: Full-stack Developer Subagent
-Task: Build ultra-modern AI Image Generator SaaS website
-
-Work Log:
-- Created globals.css with dark theme, aurora animations, glassmorphism, glow effects, custom scrollbar
-- Updated layout.tsx with dark mode and NeuraCanvas AI metadata
-- Created API route at /api/generate using z-ai-web-dev-sdk for image generation
-- Created Zustand store with full app state management
-- Built 12 custom components: AuroraBackground, ParticleField, Navbar, HeroSection, GeneratorSection, GallerySection, CommunitySection, TrendingSection, PricingSection, DashboardSection, PromptHistory, Footer
-- Composed all sections in page.tsx
-- Passed lint with 0 errors
-
-Stage Summary:
-- Complete SaaS website built with futuristic dark theme design
-- All 8 sections rendering correctly (Hero, Generator, Gallery, Dashboard, Trending, Community, History, Pricing)
-- Image generation API working (POST /api/generate returns 200)
-- Responsive design verified on mobile and desktop viewports
-- No console errors
-
----
-Task ID: 3
-Agent: Main Agent
-Task: Browser verification and final polish
-
-Work Log:
-- Verified site responds with 200 status
-- All 8 sections confirmed rendering via DOM query
-- Hero section with typing animation and showcase cards verified
-- Generator section with prompt box, style selector, size selector, generate button verified
-- Gallery empty state displays correctly
-- Dashboard stats and usage chart rendering
-- Community bento grid and trending prompts verified
-- Pricing section with 3 tiers (Free/Pro/Enterprise) verified
-- Mobile responsive view tested at 375x812 viewport
-- Desktop view tested at 1920x1080 viewport
-- No page errors detected
-- Lint passes cleanly
-
-Stage Summary:
-- Site fully functional and visually verified
-- All interactions working: prompt input, style selection, generate button, navigation
-- Dark futuristic theme with glassmorphism, aurora effects, and particle animations
-- Ready for deployment
+- Complete rebrand from NeuraCanvas AI → Pixora.ai
+- Full Firebase backend integration (Auth, Firestore, Storage)
+- Beautiful auth pages matching site's dark glassmorphism theme
+- Graceful degradation: works without Firebase in dev mode (in-memory + local filesystem fallback)
+- Job-based AI generation architecture preserved and working
+- Site builds and serves correctly on port 3000

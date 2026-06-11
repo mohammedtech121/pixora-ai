@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 import { setJob } from '@/lib/storage';
+import { getAdminDb, isFirebaseConfigured } from '@/lib/firebase-admin';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase-admin/firestore';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -20,6 +22,7 @@ const VALID_SIZES = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864'
 
 interface GenerationJob {
   id: string;
+  userId: string;
   status: 'processing' | 'complete' | 'error';
   prompt: string;
   style: string;
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { prompt, negativePrompt, style, size, numImages } = body;
+  const { prompt, negativePrompt, style, size, numImages, userId } = body;
 
   if (!prompt || typeof prompt !== 'string') {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
@@ -67,11 +70,29 @@ export async function POST(request: NextRequest) {
   const stylePrefix = STYLE_PRESETS[stylePreset] || '';
   const enhancedPrompt = `${stylePrefix}${prompt}${negativePrompt ? `. Avoid: ${negativePrompt}` : ''}`;
 
+  // Check user credits if userId is provided and Firebase is configured
+  const effectiveUserId = userId || 'anonymous';
+  if (userId && isFirebaseConfigured()) {
+    try {
+      const db = getAdminDb();
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        if ((userData.credits ?? 0) < validatedNumImages) {
+          return NextResponse.json({ error: 'Not enough credits' }, { status: 400 });
+        }
+      }
+    } catch (error) {
+      console.error('[Generate] Credit check error:', error);
+    }
+  }
+
   // Create a job
   const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const job: GenerationJob = {
     id: jobId,
+    userId: effectiveUserId,
     status: 'processing',
     prompt,
     style: stylePreset,
@@ -92,9 +113,8 @@ export async function POST(request: NextRequest) {
   });
 
   // Start generation in the background (fire-and-forget)
-  // On Vercel, this works because the function stays alive after response
   (async () => {
-    console.log(`[Generate] Job ${jobId} started:`, { prompt: prompt.slice(0, 50), style: stylePreset, size: validatedSize, numImages: validatedNumImages });
+    console.log(`[Generate] Job ${jobId} started:`, { prompt: prompt.slice(0, 50), style: stylePreset, size: validatedSize, numImages: validatedNumImages, userId: effectiveUserId });
 
     try {
       const { saveImage } = await import('@/lib/storage');
@@ -154,6 +174,25 @@ export async function POST(request: NextRequest) {
               // Update job after each image so polling picks it up
               await setJob(jobId, job);
 
+              // Save image metadata to Firestore (if configured)
+              if (isFirebaseConfigured() && effectiveUserId !== 'anonymous') {
+                try {
+                  const db = getAdminDb();
+                  const { setDoc: adminSetDoc } = await import('firebase-admin/firestore');
+                  await adminSetDoc(doc(db, 'user_images', imageId), {
+                    userId: effectiveUserId,
+                    jobId,
+                    url: imageUrl,
+                    prompt,
+                    style: stylePreset,
+                    size: validatedSize,
+                    createdAt: serverTimestamp(),
+                  });
+                } catch (imgMetaError) {
+                  console.error(`[Generate] Failed to save image metadata:`, imgMetaError);
+                }
+              }
+
               console.log(`[Generate] Job ${jobId} - image ${i + 1} saved (${imageId})`);
             }
           } else {
@@ -169,6 +208,26 @@ export async function POST(request: NextRequest) {
         job.error = 'Could not generate images. The AI service may be temporarily busy — please try again.';
       } else {
         job.status = 'complete';
+
+        // Deduct credits from user in Firestore
+        if (effectiveUserId !== 'anonymous' && isFirebaseConfigured()) {
+          try {
+            const db = getAdminDb();
+            const userRef = doc(db, 'users', effectiveUserId);
+            const userDoc = await getDoc(userRef);
+            if (userDoc.exists) {
+              const currentCredits = userDoc.data().credits ?? 0;
+              const newCredits = Math.max(0, currentCredits - job.images.length);
+              await updateDoc(userRef, {
+                credits: newCredits,
+                updatedAt: serverTimestamp(),
+              });
+              console.log(`[Generate] Job ${jobId} - deducted ${job.images.length} credits from user ${effectiveUserId}. New balance: ${newCredits}`);
+            }
+          } catch (creditError) {
+            console.error(`[Generate] Job ${jobId} - failed to deduct credits:`, creditError);
+          }
+        }
       }
 
       await setJob(jobId, job);

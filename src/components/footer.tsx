@@ -40,7 +40,7 @@ export function Footer() {
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-violet-400" />
               <span className="text-lg font-bold bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
-                NeuraCanvas AI
+                Pixora.ai
               </span>
             </div>
             <p className="text-sm text-gray-500 mb-6 max-w-xs">
@@ -107,7 +107,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="mt-12 pt-6 border-t border-white/[0.04] flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-gray-600">
-            © {new Date().getFullYear()} NeuraCanvas AI. All rights reserved.
+            © {new Date().getFullYear()} Pixora.ai. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
             <span className="text-xs text-gray-600">Built with</span>

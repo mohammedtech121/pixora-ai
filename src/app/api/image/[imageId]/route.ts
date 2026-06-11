@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getImage } from '@/lib/storage';
+import { isFirebaseConfigured, getAdminStorage } from '@/lib/firebase-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,9 +10,25 @@ export async function GET(
 ) {
   const { imageId } = await params;
 
-  // On Vercel Blob, images are served directly from the blob URL — no need for this endpoint
-  // This is only used in local dev mode
+  // If Firebase Storage is configured, try to redirect to the public URL
+  if (isFirebaseConfigured()) {
+    try {
+      const storage = getAdminStorage();
+      const bucket = storage.bucket();
+      const file = bucket.file(`generated/${imageId}.jpg`);
 
+      const [exists] = await file.exists();
+      if (exists) {
+        // Redirect to the Firebase Storage public URL
+        const publicUrl = file.publicUrl();
+        return NextResponse.redirect(publicUrl);
+      }
+    } catch (error) {
+      console.error('[Image API] Firebase Storage error, falling back to local:', error);
+    }
+  }
+
+  // Local dev fallback: serve from filesystem
   const buffer = await getImage(imageId);
 
   if (!buffer) {

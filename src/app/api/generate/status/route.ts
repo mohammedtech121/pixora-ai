@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     jobId: job.id,
+    userId: job.userId,
     status: job.status,
     prompt: job.prompt,
     style: job.style,

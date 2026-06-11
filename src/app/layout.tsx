@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider } from "@/contexts/auth-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,17 +15,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NeuraCanvas AI - Create Anything You Can Imagine",
+  title: "Pixora.ai - Create Anything You Can Imagine",
   description: "Premium AI image generation platform. Transform your ideas into stunning visuals with state-of-the-art AI models. Create photorealistic images, anime art, cinematic scenes, and more.",
-  keywords: ["AI", "image generation", "art", "creative", "NeuraCanvas", "artificial intelligence", "text to image"],
-  authors: [{ name: "NeuraCanvas AI" }],
+  keywords: ["AI", "image generation", "art", "creative", "Pixora", "artificial intelligence", "text to image"],
+  authors: [{ name: "Pixora.ai" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "NeuraCanvas AI - Create Anything You Can Imagine",
+    title: "Pixora.ai - Create Anything You Can Imagine",
     description: "Premium AI image generation platform with state-of-the-art models",
-    siteName: "NeuraCanvas AI",
+    siteName: "Pixora.ai",
     type: "website",
   },
 };
@@ -39,7 +40,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         <Toaster />
       </body>
     </html>

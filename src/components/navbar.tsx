@@ -1,9 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Menu, X, Zap, User } from 'lucide-react';
+import { Sparkles, Menu, X, Zap, LogOut, User as UserIcon, CreditCard, Settings } from 'lucide-react';
 import { useAppStore } from '@/store/use-app-store';
+import { useAuth } from '@/contexts/auth-context';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const navLinks = [
   { label: 'Generate', href: '#generate' },
@@ -15,6 +25,45 @@ const navLinks = [
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const creditsVal = useAppStore((s) => s.credits);
+  const { user, userData, signOut, loading } = useAuth();
+
+  // Sync credits from auth context to store
+  const setCredits = useAppStore((s) => s.setCredits);
+  useEffect(() => {
+    if (userData?.credits !== undefined) {
+      setCredits(userData.credits);
+    }
+  }, [userData?.credits, setCredits]);
+
+  // Fetch credits from API periodically when user is logged in
+  const fetchCredits = useCallback(async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`/api/credits?uid=${user.uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCredits(data.credits ?? 50);
+      }
+    } catch {
+      // Silently fail
+    }
+  }, [user, setCredits]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchCredits();
+    const interval = setInterval(fetchCredits, 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchCredits]);
+
+  const handleSignOut = async () => {
+    await signOut();
+    setCredits(50);
+  };
+
+  const displayName = user?.displayName || userData?.displayName || user?.email?.split('@')[0] || 'User';
+  const initials = displayName.slice(0, 2).toUpperCase();
+  const photoURL = user?.photoURL || userData?.photoURL;
 
   return (
     <motion.nav
@@ -35,7 +84,7 @@ export function Navbar() {
               <div className="absolute inset-0 bg-violet-500/20 blur-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <span className="text-lg font-bold bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent animate-gradient-text">
-              NeuraCanvas AI
+              Pixora.ai
             </span>
           </a>
 
@@ -61,11 +110,60 @@ export function Navbar() {
               <span className="text-xs text-gray-500">credits</span>
             </div>
 
-            {/* Profile button */}
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.08] hover:border-white/[0.12] transition-all duration-200">
-              <User className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-300">Profile</span>
-            </button>
+            {user ? (
+              /* User dropdown */
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.08] hover:border-white/[0.12] transition-all duration-200">
+                    <Avatar className="h-6 w-6">
+                      {photoURL && <AvatarImage src={photoURL} alt={displayName} />}
+                      <AvatarFallback className="bg-violet-500/20 text-violet-300 text-xs font-medium">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm text-gray-300 max-w-[100px] truncate">{displayName}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 bg-[#0a0a1a] border-white/[0.08]">
+                  <DropdownMenuLabel className="text-gray-400">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium text-white">{displayName}</p>
+                      <p className="text-xs text-gray-500">{user.email}</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-white/[0.06]" />
+                  <DropdownMenuItem className="text-gray-300 focus:text-white focus:bg-white/[0.06] cursor-pointer">
+                    <UserIcon className="mr-2 h-4 w-4" />
+                    Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-gray-300 focus:text-white focus:bg-white/[0.06] cursor-pointer">
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    <span>Credits: {creditsVal}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-gray-300 focus:text-white focus:bg-white/[0.06] cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-white/[0.06]" />
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="text-red-400 focus:text-red-300 focus:bg-red-500/10 cursor-pointer"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              /* Sign In button */
+              <a
+                href="/auth/login"
+                className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 hover:border-violet-500/50 transition-all duration-200 text-sm font-medium"
+              >
+                <UserIcon className="w-4 h-4" />
+                Sign In
+              </a>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -99,15 +197,39 @@ export function Navbar() {
                   {link.label}
                 </a>
               ))}
-              <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
+              <div className="pt-3 border-t border-white/[0.06] space-y-2">
+                <div className="flex items-center gap-1.5 px-4 py-2">
                   <Zap className="w-3.5 h-3.5 text-amber-400" />
                   <span className="text-sm text-gray-300">{creditsVal} credits</span>
                 </div>
-                <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                  <User className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-300">Profile</span>
-                </button>
+                {user ? (
+                  <>
+                    <div className="flex items-center gap-2 px-4 py-2">
+                      <Avatar className="h-6 w-6">
+                        {photoURL && <AvatarImage src={photoURL} alt={displayName} />}
+                        <AvatarFallback className="bg-violet-500/20 text-violet-300 text-xs font-medium">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm text-gray-300">{displayName}</span>
+                    </div>
+                    <button
+                      onClick={() => { handleSignOut(); setMobileOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <a
+                    href="/auth/login"
+                    onClick={() => setMobileOpen(false)}
+                    className="block px-4 py-2.5 text-sm text-violet-400 hover:text-violet-300 font-medium"
+                  >
+                    Sign In
+                  </a>
+                )}
               </div>
             </div>
           </motion.div>

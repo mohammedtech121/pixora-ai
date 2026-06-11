@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { User } from 'firebase/auth';
 
 export type StylePreset = 'realistic' | 'anime' | 'cinematic' | '3d' | 'fantasy' | 'cyberpunk' | 'pixar' | 'ghibli';
 
@@ -58,6 +59,9 @@ interface AppState {
   // Credits
   credits: number;
 
+  // User
+  user: User | null;
+
   // UI state
   activeSection: string;
 
@@ -78,6 +82,7 @@ interface AppState {
   addPromptHistory: (item: PromptHistoryItem) => void;
   setCredits: (credits: number) => void;
   deductCredits: (amount: number) => void;
+  setUser: (user: User | null) => void;
   setActiveSection: (section: string) => void;
 }
 
@@ -121,6 +126,9 @@ export const useAppStore = create<AppState>((set) => ({
   // Credits
   credits: 50,
 
+  // User
+  user: null,
+
   // UI state
   activeSection: 'generate',
 
@@ -147,5 +155,6 @@ export const useAppStore = create<AppState>((set) => ({
   deductCredits: (amount) => set((state) => ({
     credits: Math.max(0, state.credits - amount),
   })),
+  setUser: (user) => set({ user }),
   setActiveSection: (activeSection) => set({ activeSection }),
 }));
