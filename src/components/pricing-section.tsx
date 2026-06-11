@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Check, Zap, Crown, Rocket, ArrowRight, Shield, Phone } from 'lucide-react';
+import { Check, Zap, Crown, Rocket, ArrowRight, Shield } from 'lucide-react';
 
 const plans = [
   {
@@ -11,14 +11,13 @@ const plans = [
     period: 'forever',
     credits: 10,
     creditsLabel: '10 credits on signup',
-    description: 'Try AI image generation with your phone number',
+    description: 'Try AI image generation for free',
     features: [
       '10 image generations on signup',
       'Standard quality output',
       '4 styles available',
       '1024×1024 max resolution',
       'Community gallery access',
-      'Phone verification required',
     ],
     cta: 'Get Started Free',
     popular: false,
@@ -95,11 +94,11 @@ export function PricingSection() {
             </span>
           </h2>
           <p className="text-gray-400 max-w-xl mx-auto">
-            Start for free and scale as you grow. One phone number, one account — no credit abuse.
+            Start for free and scale as you grow. No hidden fees, no surprises.
           </p>
         </motion.div>
 
-        {/* Anti-abuse notice */}
+        {/* Free tier notice */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -109,8 +108,8 @@ export function PricingSection() {
         >
           <Shield className="w-5 h-5 text-emerald-400 shrink-0" />
           <div>
-            <p className="text-sm text-emerald-300 font-medium">Anti-Abuse Protection</p>
-            <p className="text-xs text-emerald-400/70">Every account requires phone verification. One phone number = one account. No fake accounts, no credit farming.</p>
+            <p className="text-sm text-emerald-300 font-medium">100% Free to Start</p>
+            <p className="text-xs text-emerald-400/70">Sign up with email or Google and get 10 free credits instantly. No credit card required.</p>
           </div>
         </motion.div>
 
@@ -180,7 +179,6 @@ export function PricingSection() {
                     : 'bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] hover:border-white/[0.15]'
                 }`}
               >
-                {plan.name === 'Free' && <Phone className="w-4 h-4" />}
                 {plan.cta}
                 <ArrowRight className="w-4 h-4" />
               </button>
@@ -197,7 +195,7 @@ export function PricingSection() {
           className="mt-10 text-center"
         >
           <p className="text-xs text-gray-500">
-            All plans include phone verification. Credits are consumed per image generated. Unused credits do not roll over.
+            Credits are consumed per image generated. Unused credits do not roll over.
           </p>
         </motion.div>
       </div>

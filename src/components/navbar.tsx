@@ -61,8 +61,7 @@ export function Navbar() {
     setCredits(10);
   };
 
-  const displayName = user?.displayName || userData?.displayName || user?.phoneNumber || user?.email?.split('@')[0] || 'User';
-  const displayPhone = user?.phoneNumber || userData?.phoneNumber;
+  const displayName = user?.displayName || userData?.displayName || user?.email?.split('@')[0] || 'User';
   const initials = displayName.slice(0, 2).toUpperCase();
   const photoURL = user?.photoURL || userData?.photoURL;
 
@@ -129,7 +128,7 @@ export function Navbar() {
                   <DropdownMenuLabel className="text-gray-400">
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium text-white">{displayName}</p>
-                      <p className="text-xs text-gray-500">{displayPhone || user?.email || ''}</p>
+                      <p className="text-xs text-gray-500">{user?.email || ''}</p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator className="bg-white/[0.06]" />
