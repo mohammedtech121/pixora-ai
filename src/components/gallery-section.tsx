@@ -1,11 +1,63 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Maximize2, RefreshCw, Wand2, Trash2, ImageIcon, X } from 'lucide-react';
+import { Download, Maximize2, Trash2, ImageIcon, X, Share2, Copy, Check } from 'lucide-react';
 import { useAppStore, type GeneratedImage } from '@/store/use-app-store';
+import { toast } from '@/hooks/use-toast';
 
-function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
+// Download helper — works with both base64 and URL images
+async function downloadImage(image: GeneratedImage) {
+  try {
+    const imageUrl = image.base64
+      ? `data:image/png;base64,${image.base64}`
+      : image.url || null;
+
+    if (!imageUrl) {
+      toast({ title: 'Download failed', description: 'Image URL not available', variant: 'destructive' });
+      return;
+    }
+
+    // For base64 images, download directly
+    if (image.base64) {
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.download = `pixora-${image.style}-${image.id}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: 'Downloaded!', description: 'Image saved to your device.' });
+      return;
+    }
+
+    // For URL images, fetch the blob then download
+    const response = await fetch(imageUrl);
+    if (!response.ok) throw new Error('Failed to fetch image');
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `pixora-${image.style}-${image.id}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+    toast({ title: 'Downloaded!', description: 'Image saved to your device.' });
+  } catch (error) {
+    console.error('Download error:', error);
+    // Fallback: open in new tab
+    const imageUrl = image.base64
+      ? `data:image/png;base64,${image.base64}`
+      : image.url;
+    if (imageUrl) {
+      window.open(imageUrl, '_blank');
+      toast({ title: 'Opened in new tab', description: 'Right-click the image to save it.' });
+    }
+  }
+}
+
+function ImageCard({ image, index, onDelete }: { image: GeneratedImage; index: number; onDelete: (id: string) => void }) {
   const [loaded, setLoaded] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -20,7 +72,6 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
     ghibli: 'from-green-400 via-emerald-500 to-teal-600',
   };
 
-  // Support both base64 and url responses from the API
   const imageUrl = image.base64
     ? `data:image/png;base64,${image.base64}`
     : image.url || null;
@@ -70,36 +121,25 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
 
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={(e) => { e.stopPropagation(); }}
-                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                  title="Download"
+                  onClick={(e) => { e.stopPropagation(); downloadImage(image); }}
+                  className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors"
+                  title="Download image"
                 >
-                  <Download className="w-4 h-4 text-white" />
+                  <Download className="w-4 h-4 text-emerald-400" />
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); }}
                   className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                  title="Upscale"
+                  title="View full size"
                 >
                   <Maximize2 className="w-4 h-4 text-white" />
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); }}
-                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                  title="Variations"
-                >
-                  <RefreshCw className="w-4 h-4 text-white" />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); }}
-                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                  title="Remix"
-                >
-                  <Wand2 className="w-4 h-4 text-white" />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); }}
-                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors ml-auto"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(image.id);
+                  }}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-red-500/20 transition-colors ml-auto"
                   title="Delete"
                 >
                   <Trash2 className="w-4 h-4 text-red-400" />
@@ -113,15 +153,49 @@ function ImageCard({ image, index }: { image: GeneratedImage; index: number }) {
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-sm border border-white/10">
           <span className="text-[10px] font-medium text-white/70 uppercase">{image.style}</span>
         </div>
+
+        {/* Quick download button (always visible) */}
+        <button
+          onClick={(e) => { e.stopPropagation(); downloadImage(image); }}
+          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-500/30 hover:border-emerald-500/30"
+          title="Download"
+        >
+          <Download className="w-3.5 h-3.5 text-white/70" />
+        </button>
       </div>
     </motion.div>
   );
 }
 
 function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => void }) {
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
   const imageUrl = image.base64
     ? `data:image/png;base64,${image.base64}`
     : image.url || null;
+
+  const handleCopyPrompt = useCallback(() => {
+    navigator.clipboard.writeText(image.prompt);
+    setCopiedPrompt(true);
+    toast({ title: 'Copied!', description: 'Prompt copied to clipboard.' });
+    setTimeout(() => setCopiedPrompt(false), 2000);
+  }, [image.prompt]);
+
+  const handleShare = useCallback(async () => {
+    if (navigator.share && imageUrl) {
+      try {
+        await navigator.share({
+          title: 'Check out my AI-generated image on Pixora.ai',
+          text: image.prompt,
+          url: imageUrl,
+        });
+      } catch {
+        // User cancelled share
+      }
+    } else {
+      handleCopyPrompt();
+    }
+  }, [imageUrl, image.prompt, handleCopyPrompt]);
 
   return (
     <motion.div
@@ -135,28 +209,68 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
         initial={{ scale: 0.9 }}
         animate={{ scale: 1 }}
         exit={{ scale: 0.9 }}
-        className="relative max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden"
+        className="relative max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-[#0a0a1a] border border-white/[0.08]"
         onClick={(e) => e.stopPropagation()}
       >
-        {imageUrl ? (
-          <img src={imageUrl} alt={image.prompt} className="w-full h-full object-contain" />
-        ) : (
-          <div className="w-[600px] h-[600px] bg-gradient-to-br from-violet-600 to-purple-600 flex items-center justify-center">
-            <ImageIcon className="w-24 h-24 text-white/20" />
-          </div>
-        )}
+        {/* Image */}
+        <div className="relative max-h-[70vh] overflow-hidden">
+          {imageUrl ? (
+            <img src={imageUrl} alt={image.prompt} className="w-full h-full object-contain" />
+          ) : (
+            <div className="w-[600px] h-[400px] bg-gradient-to-br from-violet-600 to-purple-600 flex items-center justify-center">
+              <ImageIcon className="w-24 h-24 text-white/20" />
+            </div>
+          )}
+        </div>
+
+        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 rounded-full bg-black/50 hover:bg-black/70 transition-colors"
         >
           <X className="w-5 h-5 text-white" />
         </button>
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-          <p className="text-sm text-white/90">{image.prompt}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs text-violet-300 uppercase">{image.style}</span>
-            <span className="text-xs text-gray-500">·</span>
-            <span className="text-xs text-gray-500">{image.size}</span>
+
+        {/* Bottom panel with info & actions */}
+        <div className="p-5 space-y-4">
+          {/* Prompt */}
+          <div>
+            <p className="text-sm text-white/90 leading-relaxed">{image.prompt}</p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] uppercase font-medium">
+                {image.style}
+              </span>
+              <span className="text-xs text-gray-500">{image.size}</span>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2">
+            {/* Download button — main CTA */}
+            <button
+              onClick={() => downloadImage(image)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-medium text-sm hover:bg-emerald-500/30 transition-all"
+            >
+              <Download className="w-4 h-4" />
+              Download Image
+            </button>
+
+            {/* Copy prompt */}
+            <button
+              onClick={handleCopyPrompt}
+              className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 text-sm hover:bg-white/[0.08] transition-all"
+            >
+              {copiedPrompt ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              {copiedPrompt ? 'Copied!' : 'Copy Prompt'}
+            </button>
+
+            {/* Share */}
+            <button
+              onClick={handleShare}
+              className="flex items-center justify-center px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 text-sm hover:bg-white/[0.08] transition-all"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </motion.div>
@@ -167,6 +281,14 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
 export function GallerySection() {
   const generatedImages = useAppStore((s) => s.generatedImages);
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
+
+  const handleDelete = useCallback((id: string) => {
+    // In a real app, this would also delete from Firestore/Storage
+    const store = useAppStore.getState();
+    const updated = store.generatedImages.filter(img => img.id !== id);
+    useAppStore.setState({ generatedImages: updated });
+    toast({ title: 'Image deleted', description: 'Image removed from your gallery.' });
+  }, []);
 
   return (
     <section id="gallery" className="relative py-20 z-10">
@@ -184,7 +306,7 @@ export function GallerySection() {
             </span>
           </h2>
           <p className="text-gray-400 max-w-xl mx-auto">
-            All your AI-generated masterpieces in one place
+            All your AI-generated masterpieces in one place — download, share, or remix
           </p>
         </motion.div>
 
@@ -206,7 +328,7 @@ export function GallerySection() {
               href="#generate"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 transition-all text-sm font-medium"
             >
-              <Wand2 className="w-4 h-4" />
+              <Download className="w-4 h-4" />
               Create Your First Image
             </a>
           </motion.div>
@@ -214,7 +336,7 @@ export function GallerySection() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
             {generatedImages.map((image, index) => (
               <div key={image.id} onClick={() => setSelectedImage(image)} className="cursor-pointer">
-                <ImageCard image={image} index={index} />
+                <ImageCard image={image} index={index} onDelete={handleDelete} />
               </div>
             ))}
           </div>
