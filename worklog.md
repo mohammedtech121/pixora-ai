@@ -86,3 +86,24 @@ Stage Summary:
 - API access removed from pricing and footer
 - Click animations added for better UX
 - Deployed via git push to Vercel
+
+---
+Task ID: 2
+Agent: main
+Task: Fix credits UI not updating, remove Z favicon, deploy to Vercel
+
+Work Log:
+- Identified root cause of credits not updating in UI: multiple sources (navbar polling, auth context sync, generator fetch) were overwriting locally deducted credits with stale server data
+- Added creditsLastUpdatedAt timestamp to Zustand store to prevent stale overwrites
+- Updated navbar: periodic fetch and auth context sync now check creditsLastUpdatedAt (5s cooldown) before overwriting
+- Updated generator: initial credit fetch only runs when creditsLastUpdatedAt === 0 (first load)
+- Generator now uses server creditsRemaining as source of truth, falls back to local deduction only if server doesn't return the value
+- Replaced broken JPEG-as-SVG favicon with proper SVG favicon (purple gradient star icon)
+- All Z-AI branding references confirmed removed from source code
+- Built successfully, pushed to GitHub for Vercel auto-deploy
+
+Stage Summary:
+- Credits will now correctly update in the navbar after generating images
+- Z favicon replaced with Pixora-branded purple star SVG
+- API access already removed from pricing in previous commit
+- Changes deployed via git push to GitHub (auto-deploys to Vercel)
