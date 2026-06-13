@@ -35,3 +35,28 @@ Stage Summary:
 - Graceful degradation: works without Firebase in dev mode (in-memory + local filesystem fallback)
 - Job-based AI generation architecture preserved and working
 - Site builds and serves correctly on port 3000
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Integrate Hugging Face Inference API for image generation on Vercel
+
+Work Log:
+- Analyzed existing codebase: generate endpoint used Z-AI SDK (only works locally)
+- Discovered api-inference.huggingface.co DNS doesn't resolve from Vercel
+- Found router.huggingface.co/hf-inference/models/ works from Vercel
+- Rewrote /api/generate endpoint to be synchronous (serverless-compatible)
+- Changed from fire-and-forget + polling to direct response
+- Added HF Inference API as primary method, Z-AI SDK as fallback
+- Fixed Vercel read-only filesystem issue by returning base64 data URLs
+- Added HUGGINGFACE_API_KEY env var to Vercel pixora-ai project
+- Updated frontend generator-section.tsx to handle synchronous response
+- Verified image generation works on pixora-ai-nine.vercel.app
+- Tested realistic and anime styles successfully
+
+Stage Summary:
+- Image generation is now fully working on Vercel using Hugging Face FLUX.1-schnell
+- Zero cost solution using HF free tier
+- Key model: black-forest-labs/FLUX.1-schnell via router.huggingface.co
+- Images returned as base64 data URLs (no filesystem storage needed)
+- Frontend updated to handle synchronous response directly
