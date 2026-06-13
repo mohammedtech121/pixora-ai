@@ -107,3 +107,32 @@ Stage Summary:
 - Z favicon replaced with Pixora-branded purple star SVG
 - API access already removed from pricing in previous commit
 - Changes deployed via git push to GitHub (auto-deploys to Vercel)
+
+---
+Task ID: 3
+Agent: main
+Task: Complete gallery persistence fix - images not saving/displaying after generation
+
+Work Log:
+- Root cause analysis: Gallery only used Zustand in-memory state (generatedImages array), no database loading
+- Images WERE being saved to Firestore user_images collection during generation, but there was NO API to read them back
+- On page refresh, Zustand resets to empty array - all images vanish
+- Delete only removed from local state, not from Firestore
+- Image metadata in Firestore was incomplete (missing model, negativePrompt)
+
+Fixes Applied:
+1. Created GET /api/gallery endpoint - fetches user's images from Firestore user_images collection, newest first, with fallback query if index doesn't exist
+2. Created DELETE /api/gallery/[imageId] endpoint - deletes from Firestore + Storage with ownership verification
+3. Rewrote gallery-section.tsx - now loads from database on mount, has loading/error/empty states, refresh button, delete with server sync
+4. Updated Zustand store - added galleryLoading, galleryLoaded, setGeneratedImages, removeGeneratedImage, setGalleryLoading, setGalleryLoaded actions
+5. Updated GeneratedImage interface - added model, negativePrompt, userId, createdAt fields
+6. Updated generate API route - now returns model, negativePrompt, userId in response; stores complete metadata in Firestore
+7. Updated generator-section.tsx - passes full metadata when adding to gallery; sets galleryLoaded=false after generation to trigger refresh
+
+Stage Summary:
+- Gallery now persists across page refreshes and login sessions
+- Images load from Firestore on page load
+- Delete removes from both Firestore and Storage
+- Full metadata stored: url, prompt, style, size, model, negativePrompt, userId, createdAt
+- Loading/error/empty states added for better UX
+- Deployed via git push to GitHub (auto-deploys to Vercel)
