@@ -1,0 +1,726 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useCallback, useEffect, useRef } from 'react';
+     4→     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→     5→import {
+     6→     6→  Wand2, Sparkles, ChevronDown, ChevronUp, Loader2,
+     7→     7→  Camera, Film, Box, TreePine, Cpu, Palette, Ghost, Wind,
+     8→     8→  ImageIcon, Zap, AlertCircle, Check, RotateCcw, Lock, LogIn
+     9→     9→} from 'lucide-react';
+    10→    10→import { useAppStore, type StylePreset, type ImageSize } from '@/store/use-app-store';
+    11→    11→import { useAuth } from '@/contexts/auth-context';
+    12→    12→import { toast } from '@/hooks/use-toast';
+    13→    13→
+    14→    14→const FREE_STYLES: StylePreset[] = ['realistic', 'anime', 'cinematic', '3d'];
+    15→    15→const FREE_SIZE: ImageSize = '1024x1024';
+    16→    16→
+    17→    17→const styleOptions: { id: StylePreset; label: string; icon: React.ReactNode; gradient: string; desc: string; premium: boolean; preview: string }[] = [
+    18→    18→  { id: 'realistic', label: 'Realistic', icon: <Camera className="w-4 h-4" />, gradient: 'from-slate-400 via-gray-500 to-zinc-600', desc: 'Photo-real output', premium: false, preview: '/styles/realistic.png' },
+    19→    19→  { id: 'anime', label: 'Anime', icon: <Wind className="w-4 h-4" />, gradient: 'from-pink-500 via-rose-500 to-red-500', desc: 'Japanese animation', premium: false, preview: '/styles/anime.png' },
+    20→    20→  { id: 'cinematic', label: 'Cinematic', icon: <Film className="w-4 h-4" />, gradient: 'from-amber-400 via-orange-500 to-red-500', desc: 'Movie-like scenes', premium: false, preview: '/styles/cinematic.png' },
+    21→    21→  { id: '3d', label: '3D Render', icon: <Box className="w-4 h-4" />, gradient: 'from-emerald-400 via-teal-500 to-cyan-600', desc: '3D visualization', premium: false, preview: '/styles/3d.png' },
+    22→    22→  { id: 'fantasy', label: 'Fantasy', icon: <TreePine className="w-4 h-4" />, gradient: 'from-violet-600 via-purple-500 to-fuchsia-500', desc: 'Magical worlds', premium: true, preview: '/styles/fantasy.png' },
+    23→    23→  { id: 'cyberpunk', label: 'Cyberpunk', icon: <Cpu className="w-4 h-4" />, gradient: 'from-cyan-500 via-blue-500 to-purple-600', desc: 'Neon future', premium: true, preview: '/styles/cyberpunk.png' },
+    24→    24→  { id: 'pixar', label: 'Pixar', icon: <Palette className="w-4 h-4" />, gradient: 'from-yellow-400 via-amber-500 to-orange-500', desc: 'Animated style', premium: true, preview: '/styles/pixar.png' },
+    25→    25→  { id: 'ghibli', label: 'Ghibli', icon: <Ghost className="w-4 h-4" />, gradient: 'from-green-400 via-emerald-500 to-teal-600', desc: 'Studio magic', premium: true, preview: '/styles/ghibli.png' },
+    26→    26→];
+    27→    27→
+    28→    28→const sizeOptions: { id: ImageSize; label: string; aspect: string; desc: string }[] = [
+    29→    29→  { id: '1024x1024', label: '1:1', aspect: 'Square', desc: '1024×1024' },
+    30→    30→  { id: '768x1344', label: '9:16', aspect: 'Portrait', desc: '768×1344' },
+    31→    31→  { id: '1344x768', label: '16:9', aspect: 'Landscape', desc: '1344×768' },
+    32→    32→  { id: '1152x864', label: '4:3', aspect: 'Classic', desc: '1152×864' },
+    33→    33→  { id: '864x1152', label: '3:4', aspect: 'Portrait', desc: '864×1152' },
+    34→    34→  { id: '1440x720', label: '2:1', aspect: 'Wide', desc: '1440×720' },
+    35→    35→];
+    36→    36→
+    37→    37→const placeholderPrompts = [
+    38→    38→  'A serene Japanese garden at sunset with cherry blossoms falling...',
+    39→    39→  'A futuristic cityscape with flying vehicles and neon holograms...',
+    40→    40→  'A mystical dragon perched on a crystal mountain peak...',
+    41→    41→];
+    42→    42→
+    43→    43→const negativePromptTags = ['blurry', 'low quality', 'distorted', 'watermark', 'text', 'deformed', 'bad anatomy', 'extra limbs'];
+    44→    44→
+    45→    45→export function GeneratorSection() {
+    46→    46→  const {
+    47→    47→    prompt, setPrompt,
+    48→    48→    negativePrompt, setNegativePrompt,
+    49→    49→    selectedStyle, setSelectedStyle,
+    50→    50→    selectedSize, setSelectedSize,
+    51→    51→    numImages, setNumImages,
+    52→    52→    isGenerating, setIsGenerating,
+    53→    53→    generationProgress, setGenerationProgress,
+    54→    54→    showNegativePrompt, setShowNegativePrompt,
+    55→    55→    credits, setCredits, deductCredits,
+    56→    56→    addGeneratedImage, addPromptHistory,
+    57→    57→  } = useAppStore();
+    58→    58→
+    59→    59→  const { user, userData, loading: authLoading } = useAuth();
+    60→    60→
+    61→    61→  const [promptPlaceholder, setPromptPlaceholder] = useState(placeholderPrompts[0]);
+    62→    62→  const [enhancing, setEnhancing] = useState(false);
+    63→    63→  const [generationStatus, setGenerationStatus] = useState<string>('');
+    64→    64→  const abortControllerRef = useRef<AbortController | null>(null);
+    65→    65→  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    66→    66→  const isGeneratingRef = useRef(false);
+    67→    67→
+    68→    68→  // Cycle placeholder text
+    69→    69→  useEffect(() => {
+    70→    70→    let idx = 0;
+    71→    71→    const interval = setInterval(() => {
+    72→    72→      idx = (idx + 1) % placeholderPrompts.length;
+    73→    73→      setPromptPlaceholder(placeholderPrompts[idx]);
+    74→    74→    }, 4000);
+    75→    75→    return () => clearInterval(interval);
+    76→    76→  }, []);
+    77→    77→
+    78→    78→  // Cleanup on unmount
+    79→    79→  useEffect(() => {
+    80→    80→    return () => {
+    81→    81→      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    82→    82→      if (abortControllerRef.current) abortControllerRef.current.abort();
+    83→    83→    };
+    84→    84→  }, []);
+    85→    85→
+    86→    86→  // Fetch credits from server when user changes
+    87→    87→  useEffect(() => {
+    88→    88→    if (user) {
+    89→    89→      fetch(`/api/credits?uid=${user.uid}`)
+    90→    90→        .then(res => res.ok ? res.json() : null)
+    91→    91→        .then(data => {
+    92→    92→          if (data?.credits !== undefined) {
+    93→    93→            setCredits(data.credits);
+    94→    94→          }
+    95→    95→        })
+    96→    96→        .catch(() => {});
+    97→    97→    }
+    98→    98→  }, [user, setCredits]);
+    99→    99→
+   100→   100→  const handleEnhance = useCallback(async () => {
+   101→   101→    if (!prompt.trim()) return;
+   102→   102→    setEnhancing(true);
+   103→   103→    await new Promise((r) => setTimeout(r, 1500));
+   104→   104→    const enhancements: Record<StylePreset, string> = {
+   105→   105→      realistic: ', ultra detailed, 8k resolution, professional photography, soft bokeh',
+   106→   106→      anime: ', vibrant colors, dynamic pose, detailed linework, dramatic composition',
+   107→   107→      cinematic: ', dramatic lighting, depth of field, volumetric fog, anamorphic lens',
+   108→   108→      '3d': ', studio lighting, subsurface scattering, ambient occlusion, ray tracing',
+   109→   109→      fantasy: ', ethereal glow, magical particles, intricate details, dreamy atmosphere',
+   110→   110→      cyberpunk: ', neon reflections, rain-slicked streets, holographic displays, moody',
+   111→   111→      pixar: ', soft shadows, warm lighting, expressive features, playful composition',
+   112→   112→      ghibli: ', watercolor textures, gentle gradients, warm palette, whimsical feel',
+   113→   113→    };
+   114→   114→    setPrompt(prompt + (enhancements[selectedStyle] || ', highly detailed, masterpiece'));
+   115→   115→    setEnhancing(false);
+   116→   116→    toast({ title: 'Prompt Enhanced!', description: 'AI has improved your prompt with style-specific keywords.' });
+   117→   117→  }, [prompt, selectedStyle, setPrompt]);
+   118→   118→
+   119→   119→  const handleAddNegTag = useCallback((tag: string) => {
+   120→   120→    if (negativePrompt.includes(tag)) return;
+   121→   121→    setNegativePrompt(negativePrompt ? `${negativePrompt}, ${tag}` : tag);
+   122→   122→  }, [negativePrompt, setNegativePrompt]);
+   123→   123→
+   124→   124→  const cleanupGeneration = useCallback(() => {
+   125→   125→    if (progressIntervalRef.current) {
+   126→   126→      clearInterval(progressIntervalRef.current);
+   127→   127→      progressIntervalRef.current = null;
+   128→   128→    }
+   129→   129→    isGeneratingRef.current = false;
+   130→   130→    setTimeout(() => {
+   131→   131→      setIsGenerating(false);
+   132→   132→      setGenerationProgress(0);
+   133→   133→      setGenerationStatus('');
+   134→   134→    }, 500);
+   135→   135→  }, [setIsGenerating, setGenerationProgress]);
+   136→   136→
+   137→   137→  const handleGenerate = useCallback(async () => {
+   138→   138→    if (!prompt.trim()) {
+   139→   139→      toast({ title: 'Enter a prompt', description: 'Please describe what you want to create.', variant: 'destructive' });
+   140→   140→      return;
+   141→   141→    }
+   142→   142→    if (credits < numImages) {
+   143→   143→      toast({ title: 'Not enough credits', description: 'You need more credits to generate images.', variant: 'destructive' });
+   144→   144→      return;
+   145→   145→    }
+   146→   146→
+   147→   147→    // Prevent double-generation
+   148→   148→    if (isGeneratingRef.current) return;
+   149→   149→    isGeneratingRef.current = true;
+   150→   150→
+   151→   151→    setIsGenerating(true);
+   152→   152→    setGenerationProgress(5);
+   153→   153→    setGenerationStatus('Starting generation...');
+   154→   154→
+   155→   155→    // Create abort controller for cancellation
+   156→   156→    abortControllerRef.current = new AbortController();
+   157→   157→    const { signal } = abortControllerRef.current;
+   158→   158→    let cancelled = false;
+   159→   159→
+   160→   160→    // Auto-cancel after 3 minutes
+   161→   161→    const timeoutId = setTimeout(() => {
+   162→   162→      cancelled = true;
+   163→   163→      if (abortControllerRef.current) {
+   164→   164→        abortControllerRef.current.abort();
+   165→   165→      }
+   166→   166→    }, 180000);
+   167→   167→
+   168→   168→    // Animate progress while polling
+   169→   169→    let progressVal = 5;
+   170→   170→    progressIntervalRef.current = setInterval(() => {
+   171→   171→      if (progressVal < 90) {
+   172→   172→        progressVal += Math.random() * 1.2;
+   173→   173→        setGenerationProgress(progressVal);
+   174→   174→      }
+   175→   175→      // Cycle status messages
+   176→   176→      if (progressVal > 10 && progressVal < 25) setGenerationStatus('Understanding your prompt...');
+   177→   177→      else if (progressVal >= 25 && progressVal < 45) setGenerationStatus('Creating composition...');
+   178→   178→      else if (progressVal >= 45 && progressVal < 65) setGenerationStatus('Rendering details...');
+   179→   179→      else if (progressVal >= 65 && progressVal < 85) setGenerationStatus('Finalizing image...');
+   180→   180→      else if (progressVal >= 85) setGenerationStatus('Almost there...');
+   181→   181→    }, 800);
+   182→   182→
+   183→   183→    try {
+   184→   184→      // Step 1: Start the generation job (returns immediately!)
+   185→   185→      const startResponse = await fetch('/api/generate', {
+   186→   186→        method: 'POST',
+   187→   187→        headers: { 'Content-Type': 'application/json' },
+   188→   188→        body: JSON.stringify({
+   189→   189→          prompt,
+   190→   190→          negativePrompt,
+   191→   191→          style: selectedStyle,
+   192→   192→          size: selectedSize,
+   193→   193→          numImages,
+   194→   194→          userId: user?.uid || 'anonymous',
+   195→   195→        }),
+   196→   196→        signal,
+   197→   197→      });
+   198→   198→
+   199→   199→      if (!startResponse.ok) {
+   200→   200→        let errorMsg = 'Generation failed';
+   201→   201→        try {
+   202→   202→          const errorData = await startResponse.json();
+   203→   203→          errorMsg = errorData?.error || errorMsg;
+   204→   204→        } catch {}
+   205→   205→        throw new Error(errorMsg);
+   206→   206→      }
+   207→   207→
+   208→   208→      const startData = await startResponse.json();
+   209→   209→      const jobId = startData.jobId;
+   210→   210→
+   211→   211→      if (!jobId) {
+   212→   212→        throw new Error('No job ID returned from server');
+   213→   213→      }
+   214→   214→
+   215→   215→      setGenerationProgress(10);
+   216→   216→      setGenerationStatus('AI is creating your image...');
+   217→   217→
+   218→   218→      // Step 2: Poll for job status every 2 seconds
+   219→   219→      let lastImageCount = 0;
+   220→   220→
+   221→   221→      while (!cancelled) {
+   222→   222→        // Wait 2 seconds between polls
+   223→   223→        await new Promise(r => setTimeout(r, 2000));
+   224→   224→
+   225→   225→        if (cancelled) break;
+   226→   226→
+   227→   227→        const statusResponse = await fetch(`/api/generate/status?jobId=${jobId}`, { signal });
+   228→   228→
+   229→   229→        if (!statusResponse.ok) {
+   230→   230→          if (statusResponse.status === 404) {
+   231→   231→            throw new Error('Generation job not found. Please try again.');
+   232→   232→          }
+   233→   233→          continue; // Retry on transient errors
+   234→   234→        }
+   235→   235→
+   236→   236→        const statusData = await statusResponse.json();
+   237→   237→
+   238→   238→        // Add any new images to gallery as they arrive
+   239→   239→        if (statusData.images && statusData.images.length > lastImageCount) {
+   240→   240→          const newImages = statusData.images.slice(lastImageCount);
+   241→   241→          for (const img of newImages) {
+   242→   242→            addGeneratedImage({
+   243→   243→              id: img.id,
+   244→   244→              base64: '', // Images are now served via URL
+   245→   245→              url: img.url,
+   246→   246→              prompt: img.prompt,
+   247→   247→              style: img.style as StylePreset,
+   248→   248→              size: img.size as ImageSize,
+   249→   249→              timestamp: img.timestamp,
+   250→   250→            });
+   251→   251→          }
+   252→   252→          lastImageCount = statusData.images.length;
+   253→   253→
+   254→   254→          progressVal = 20 + (lastImageCount / numImages) * 60;
+   255→   255→          setGenerationProgress(progressVal);
+   256→   256→          setGenerationStatus(
+   257→   257→            numImages > 1
+   258→   258→              ? `Image ${lastImageCount} of ${numImages} ready!`
+   259→   259→              : 'Image ready!'
+   260→   260→          );
+   261→   261→        }
+   262→   262→
+   263→   263→        // Check if job is complete
+   264→   264→        if (statusData.status === 'complete') {
+   265→   265→          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+   266→   266→          setGenerationProgress(100);
+   267→   267→          setGenerationStatus('Done!');
+   268→   268→
+   269→   269→          deductCredits(lastImageCount);
+   270→   270→
+   271→   271→          // Refresh credits from server
+   272→   272→          if (user) {
+   273→   273→            try {
+   274→   274→              const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
+   275→   275→              if (creditsRes.ok) {
+   276→   276→                const creditsData = await creditsRes.json();
+   277→   277→                setCredits(creditsData.credits ?? credits - lastImageCount);
+   278→   278→              }
+   279→   279→            } catch {}
+   280→   280→          }
+   281→   281→
+   282→   282→          addPromptHistory({
+   283→   283→            id: `ph_${Date.now()}`,
+   284→   284→            prompt,
+   285→   285→            style: selectedStyle,
+   286→   286→            timestamp: Date.now(),
+   287→   287→          });
+   288→   288→
+   289→   289→          toast({
+   290→   290→            title: 'Image Generated!',
+   291→   291→            description: `${lastImageCount} image${lastImageCount > 1 ? 's' : ''} created successfully.`,
+   292→   292→          });
+   293→   293→
+   294→   294→          setTimeout(() => {
+   295→   295→            document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
+   296→   296→          }, 600);
+   297→   297→
+   298→   298→          break;
+   299→   299→        }
+   300→   300→
+   301→   301→        if (statusData.status === 'error') {
+   302→   302→          throw new Error(statusData.error || 'Generation failed. Please try again.');
+   303→   303→        }
+   304→   304→
+   305→   305→        // Still processing — continue polling
+   306→   306→      }
+   307→   307→    } catch (error: unknown) {
+   308→   308→      if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) {
+   309→   309→        toast({
+   310→   310→          title: 'Generation Timed Out',
+   311→   311→          description: 'The AI service took too long. Please try again.',
+   312→   312→          variant: 'destructive',
+   313→   313→        });
+   314→   314→      } else {
+   315→   315→        const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+   316→   316→        // Check if it's an upgrade-required error
+   317→   317→        const isUpgradeError = message.includes('Upgrade to unlock') || message.includes('requires a Starter or Pro plan');
+   318→   318→        toast({
+   319→   319→          title: isUpgradeError ? 'Upgrade Required' : 'Generation Failed',
+   320→   320→          description: isUpgradeError ? message + ' Visit Pricing to upgrade your plan.' : message,
+   321→   321→          variant: 'destructive',
+   322→   322→        });
+   323→   323→      }
+   324→   324→    } finally {
+   325→   325→      clearTimeout(timeoutId);
+   326→   326→      cleanupGeneration();
+   327→   327→    }
+   328→   328→  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, user, addGeneratedImage, addPromptHistory, deductCredits, cleanupGeneration, setIsGenerating, setGenerationProgress, setCredits]);
+   329→   329→
+   330→   330→  const handleCancel = useCallback(() => {
+   331→   331→    if (abortControllerRef.current) {
+   332→   332→      abortControllerRef.current.abort();
+   333→   333→    }
+   334→   334→    cleanupGeneration();
+   335→   335→    toast({ title: 'Generation Cancelled', description: 'Image generation was cancelled.' });
+   336→   336→  }, [cleanupGeneration]);
+   337→   337→
+   338→   338→  return (
+   339→   339→    <section id="generate" className="relative py-20 z-10">
+   340→   340→      <div className="container mx-auto px-4 md:px-8">
+   341→   341→        <motion.div
+   342→   342→          initial={{ opacity: 0, y: 30 }}
+   343→   343→          whileInView={{ opacity: 1, y: 0 }}
+   344→   344→          viewport={{ once: true }}
+   345→   345→          transition={{ duration: 0.6 }}
+   346→   346→          className="text-center mb-12"
+   347→   347→        >
+   348→   348→          <h2 className="text-3xl md:text-5xl font-bold mb-4">
+   349→   349→            <span className="bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+   350→   350→              AI Image Studio
+   351→   351→            </span>
+   352→   352→          </h2>
+   353→   353→          <p className="text-gray-400 max-w-xl mx-auto">
+   354→   354→            Describe your vision and watch it come to life with our state-of-the-art AI models
+   355→   355→          </p>
+   356→   356→        </motion.div>
+   357→   357→
+   358→   358→        {/* Auth gate: show sign-in prompt if not logged in */}
+   359→   359→        {!user && !authLoading ? (
+   360→   360→          <motion.div
+   361→   361→            initial={{ opacity: 0, y: 20 }}
+   362→   362→            animate={{ opacity: 1, y: 0 }}
+   363→   363→            transition={{ duration: 0.5 }}
+   364→   364→            className="max-w-4xl mx-auto"
+   365→   365→          >
+   366→   366→            <div className="glass-card p-12 text-center">
+   367→   367→              <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-6">
+   368→   368→                <LogIn className="w-8 h-8 text-violet-400" />
+   369→   369→              </div>
+   370→   370→              <h3 className="text-xl font-semibold text-white mb-2">Sign In to Start Creating</h3>
+   371→   371→              <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+   372→   372→                Join Pixora.ai with your email or Google account and get 10 free credits to generate stunning AI images.
+   373→   373→              </p>
+   374→   374→              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+   375→   375→                <a
+   376→   376→                  href="/auth/login"
+   377→   377→                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl btn-generate text-white font-semibold text-sm hover:scale-[1.01] active:scale-[0.99] transition-all duration-300"
+   378→   378→                >
+   379→   379→                  <LogIn className="w-4 h-4" />
+   380→   380→                  Sign In with Email
+   381→   381→                </a>
+   382→   382→                <a
+   383→   383→                  href="/auth/login"
+   384→   384→                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] hover:text-white font-medium text-sm transition-all duration-200"
+   385→   385→                >
+   386→   386→                  <Sparkles className="w-4 h-4 text-violet-400" />
+   387→   387→                  Get 10 Free Credits
+   388→   388→                </a>
+   389→   389→              </div>
+   390→   390→            </div>
+   391→   391→          </motion.div>
+   392→   392→        ) : (
+   393→   393→        <div className="max-w-4xl mx-auto space-y-6">
+   394→   394→          {/* Prompt Box */}
+   395→   395→          <motion.div
+   396→   396→            initial={{ opacity: 0, y: 20 }}
+   397→   397→            whileInView={{ opacity: 1, y: 0 }}
+   398→   398→            viewport={{ once: true }}
+   399→   399→            transition={{ duration: 0.5, delay: 0.1 }}
+   400→   400→            className="glass-card p-6"
+   401→   401→          >
+   402→   402→            <div className="flex items-center justify-between mb-3">
+   403→   403→              <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+   404→   404→                <Sparkles className="w-4 h-4 text-violet-400" />
+   405→   405→                Describe your image
+   406→   406→              </label>
+   407→   407→              <span className="text-xs text-gray-500">{prompt.length}/1000</span>
+   408→   408→            </div>
+   409→   409→            <div className="relative">
+   410→   410→              <textarea
+   411→   411→                value={prompt}
+   412→   412→                onChange={(e) => setPrompt(e.target.value.slice(0, 1000))}
+   413→   413→                placeholder={promptPlaceholder}
+   414→   414→                rows={4}
+   415→   415→                disabled={isGenerating}
+   416→   416→                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 resize-none transition-all text-sm leading-relaxed disabled:opacity-50"
+   417→   417→              />
+   418→   418→              <button
+   419→   419→                onClick={handleEnhance}
+   420→   420→                disabled={!prompt.trim() || enhancing || isGenerating}
+   421→   421→                className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium hover:bg-violet-500/30 hover:border-violet-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+   422→   422→              >
+   423→   423→                {enhancing ? (
+   424→   424→                  <Loader2 className="w-3 h-3 animate-spin" />
+   425→   425→                ) : (
+   426→   426→                  <Wand2 className="w-3 h-3" />
+   427→   427→                )}
+   428→   428→                {enhancing ? 'Enhancing...' : 'Enhance'}
+   429→   429→              </button>
+   430→   430→            </div>
+   431→   431→
+   432→   432→            {/* Negative Prompt Toggle */}
+   433→   433→            <button
+   434→   434→              onClick={() => {
+   435→   435→                if (userData?.plan === 'free' || !userData?.plan) {
+   436→   436→                  toast({
+   437→   437→                    title: 'Premium Feature',
+   438→   438→                    description: 'Negative prompts require Starter or Pro plan. Upgrade to unlock this feature.',
+   439→   439→                    variant: 'destructive',
+   440→   440→                  });
+   441→   441→                  return;
+   442→   442→                }
+   443→   443→                setShowNegativePrompt(!showNegativePrompt);
+   444→   444→              }}
+   445→   445→              className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+   446→   446→            >
+   447→   447→              {showNegativePrompt ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+   448→   448→              Negative Prompt
+   449→   449→              {(userData?.plan === 'free' || !userData?.plan) && (
+   450→   450→                <Lock className="w-3 h-3 text-amber-400/60" />
+   451→   451→              )}
+   452→   452→            </button>
+   453→   453→
+   454→   454→            <AnimatePresence>
+   455→   455→              {showNegativePrompt && (userData?.plan !== 'free' && userData?.plan) && (
+   456→   456→                <motion.div
+   457→   457→                  initial={{ opacity: 0, height: 0 }}
+   458→   458→                  animate={{ opacity: 1, height: 'auto' }}
+   459→   459→                  exit={{ opacity: 0, height: 0 }}
+   460→   460→                  transition={{ duration: 0.2 }}
+   461→   461→                  className="overflow-hidden"
+   462→   462→                >
+   463→   463→                  <textarea
+   464→   464→                    value={negativePrompt}
+   465→   465→                    onChange={(e) => setNegativePrompt(e.target.value)}
+   466→   466→                    placeholder="Things to avoid in the image..."
+   467→   467→                    rows={2}
+   468→   468→                    disabled={isGenerating}
+   469→   469→                    className="mt-3 w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-red-500/30 focus:ring-1 focus:ring-red-500/20 resize-none transition-all text-sm disabled:opacity-50"
+   470→   470→                  />
+   471→   471→                  <div className="mt-2 flex flex-wrap gap-1.5">
+   472→   472→                    {negativePromptTags.map((tag) => (
+   473→   473→                      <button
+   474→   474→                        key={tag}
+   475→   475→                        onClick={() => handleAddNegTag(tag)}
+   476→   476→                        disabled={isGenerating}
+   477→   477→                        className="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400/70 text-xs hover:bg-red-500/20 hover:text-red-300 transition-all disabled:opacity-40"
+   478→   478→                      >
+   479→   479→                        + {tag}
+   480→   480→                      </button>
+   481→   481→                    ))}
+   482→   482→                  </div>
+   483→   483→                </motion.div>
+   484→   484→              )}
+   485→   485→            </AnimatePresence>
+   486→   486→          </motion.div>
+   487→   487→
+   488→   488→          {/* Style Selector */}
+   489→   489→          <motion.div
+   490→   490→            initial={{ opacity: 0, y: 20 }}
+   491→   491→            whileInView={{ opacity: 1, y: 0 }}
+   492→   492→            viewport={{ once: true }}
+   493→   493→            transition={{ duration: 0.5, delay: 0.2 }}
+   494→   494→            className="glass-card p-6"
+   495→   495→          >
+   496→   496→            <label className="text-sm font-medium text-gray-300 mb-4 block flex items-center gap-2">
+   497→   497→              Style
+   498→   498→              {(userData?.plan === 'free' || !userData?.plan) && (
+   499→   499→                <span className="text-[10px] text-violet-400/70 bg-violet-500/10 px-2 py-0.5 rounded-full">4 of 8 on Free</span>
+   500→   500→              )}
+   501→   501→            </label>
+   502→   502→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+   503→   503→              {styleOptions.map((style) => {
+   504→   504→                const isPremium = style.premium && (userData?.plan === 'free' || !userData?.plan);
+   505→   505→                return (
+   506→   506→                  <motion.button
+   507→   507→                    key={style.id}
+   508→   508→                    onClick={() => {
+   509→   509→                      if (isPremium) {
+   510→   510→                        toast({
+   511→   511→                          title: 'Premium Style',
+   512→   512→                          description: `"${style.label}" requires Starter or Pro plan. Upgrade to unlock all styles.`,
+   513→   513→                          variant: 'destructive',
+   514→   514→                        });
+   515→   515→                        return;
+   516→   516→                      }
+   517→   517→                      setSelectedStyle(style.id);
+   518→   518→                    }}
+   519→   519→                    whileHover={{ scale: isPremium ? 1 : 1.02 }}
+   520→   520→                    whileTap={{ scale: isPremium ? 1 : 0.98 }}
+   521→   521→                    disabled={isGenerating}
+   522→   522→                    className={`relative p-3 rounded-xl border transition-all duration-200 text-left group disabled:opacity-50 ${
+   523→   523→                      isPremium
+   524→   524→                        ? 'border-amber-500/20 bg-amber-500/[0.03] cursor-not-allowed'
+   525→   525→                        : selectedStyle === style.id
+   526→   526→                          ? 'border-violet-500/50 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.2)]'
+   527→   527→                          : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
+   528→   528→                    }`}
+   529→   529→                  >
+   530→   530→                    <div className="w-full h-12 rounded-lg mb-2 overflow-hidden relative">
+   531→   531→                    <img
+   532→   532→                      src={style.preview}
+   533→   533→                      alt={style.label}
+   534→   534→                      className={`w-full h-full object-cover ${isPremium ? 'opacity-20 grayscale' : 'opacity-70 group-hover:opacity-90'} transition-all duration-200`}
+   535→   535→                    />
+   536→   536→                    {!isPremium && <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />}
+   537→   537→                  </div>
+   538→   538→                    <div className="flex items-center gap-1.5">
+   539→   539→                      <span className={`${isPremium ? 'text-gray-600' : 'text-gray-400 group-hover:text-gray-300'} transition-colors`}>{style.icon}</span>
+   540→   540→                      <span className={`text-xs font-medium ${isPremium ? 'text-gray-500' : 'text-gray-300'}`}>{style.label}</span>
+   541→   541→                    </div>
+   542→   542→                    <span className="text-[10px] text-gray-500">{style.desc}</span>
+   543→   543→                    {isPremium && (
+   544→   544→                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+   545→   545→                        <Lock className="w-2.5 h-2.5 text-amber-400" />
+   546→   546→                      </div>
+   547→   547→                    )}
+   548→   548→                    {selectedStyle === style.id && !isPremium && (
+   549→   549→                      <motion.div
+   550→   550→                        layoutId="style-indicator"
+   551→   551→                        className="absolute top-2 right-2 w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center"
+   552→   552→                      >
+   553→   553→                        <Check className="w-2.5 h-2.5 text-white" />
+   554→   554→                      </motion.div>
+   555→   555→                    )}
+   556→   556→                  </motion.button>
+   557→   557→                );
+   558→   558→              })}
+   559→   559→            </div>
+   560→   560→          </motion.div>
+   561→   561→
+   562→   562→          {/* Size & Count Row */}
+   563→   563→          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+   564→   564→            {/* Size Selector */}
+   565→   565→            <motion.div
+   566→   566→              initial={{ opacity: 0, y: 20 }}
+   567→   567→              whileInView={{ opacity: 1, y: 0 }}
+   568→   568→              viewport={{ once: true }}
+   569→   569→              transition={{ duration: 0.5, delay: 0.3 }}
+   570→   570→              className="glass-card p-6"
+   571→   571→            >
+   572→   572→              <label className="text-sm font-medium text-gray-300 mb-4 block flex items-center gap-2">
+   573→   573→                Size
+   574→   574→                {(userData?.plan === 'free' || !userData?.plan) && (
+   575→   575→                  <span className="text-[10px] text-violet-400/70 bg-violet-500/10 px-2 py-0.5 rounded-full">1:1 only on Free</span>
+   576→   576→                )}
+   577→   577→              </label>
+   578→   578→              <div className="grid grid-cols-3 gap-2">
+   579→   579→                {sizeOptions.map((size) => {
+   580→   580→                  const isPremiumSize = size.id !== FREE_SIZE && (userData?.plan === 'free' || !userData?.plan);
+   581→   581→                  return (
+   582→   582→                    <button
+   583→   583→                      key={size.id}
+   584→   584→                      onClick={() => {
+   585→   585→                        if (isPremiumSize) {
+   586→   586→                          toast({
+   587→   587→                            title: 'Premium Resolution',
+   588→   588→                            description: `${size.aspect} (${size.desc}) requires Starter or Pro plan. Upgrade to unlock all resolutions.`,
+   589→   589→                            variant: 'destructive',
+   590→   590→                          });
+   591→   591→                          return;
+   592→   592→                        }
+   593→   593→                        setSelectedSize(size.id);
+   594→   594→                      }}
+   595→   595→                      disabled={isGenerating}
+   596→   596→                      className={`relative p-2.5 rounded-xl border transition-all duration-200 text-center disabled:opacity-50 ${
+   597→   597→                        isPremiumSize
+   598→   598→                          ? 'border-amber-500/20 bg-amber-500/[0.03] cursor-not-allowed'
+   599→   599→                          : selectedSize === size.id
+   600→   600→                            ? 'border-violet-500/50 bg-violet-500/10'
+   601→   601→                            : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
+   602→   602→                      }`}
+   603→   603→                    >
+   604→   604→                      <div className="flex items-center justify-center mb-1.5">
+   605→   605→                        <div
+   606→   606→                          className={`border border-current rounded-sm ${isPremiumSize ? 'text-gray-700' : selectedSize === size.id ? 'text-violet-400' : 'text-gray-500'}`}
+   607→   607→                          style={{
+   608→   608→                            width: size.id === '768x1344' || size.id === '864x1152' ? 12 : size.id === '1344x768' || size.id === '1440x720' ? 24 : 18,
+   609→   609→                            height: size.id === '768x1344' || size.id === '720x1440' ? 24 : size.id === '1344x768' || size.id === '1440x720' ? 12 : 18,
+   610→   610→                          }}
+   611→   611→                        />
+   612→   612→                      </div>
+   613→   613→                      <div className={`text-xs font-medium ${isPremiumSize ? 'text-gray-600' : selectedSize === size.id ? 'text-violet-300' : 'text-gray-400'}`}>
+   614→   614→                        {size.label}
+   615→   615→                      </div>
+   616→   616→                      <div className="text-[10px] text-gray-500">{size.aspect}</div>
+   617→   617→                      {isPremiumSize && (
+   618→   618→                        <Lock className="absolute top-1.5 right-1.5 w-2.5 h-2.5 text-amber-400/60" />
+   619→   619→                      )}
+   620→   620→                    </button>
+   621→   621→                  );
+   622→   622→                })}
+   623→   623→              </div>
+   624→   624→            </motion.div>
+   625→   625→
+   626→   626→            {/* Number of Images */}
+   627→   627→            <motion.div
+   628→   628→              initial={{ opacity: 0, y: 20 }}
+   629→   629→              whileInView={{ opacity: 1, y: 0 }}
+   630→   630→              viewport={{ once: true }}
+   631→   631→              transition={{ duration: 0.5, delay: 0.4 }}
+   632→   632→              className="glass-card p-6"
+   633→   633→            >
+   634→   634→              <label className="text-sm font-medium text-gray-300 mb-4 block">Number of Images</label>
+   635→   635→              <div className="grid grid-cols-4 gap-2">
+   636→   636→                {[1, 2, 3, 4].map((n) => (
+   637→   637→                  <button
+   638→   638→                    key={n}
+   639→   639→                    onClick={() => setNumImages(n)}
+   640→   640→                    disabled={isGenerating}
+   641→   641→                    className={`p-3 rounded-xl border transition-all duration-200 flex flex-col items-center disabled:opacity-50 ${
+   642→   642→                      numImages === n
+   643→   643→                        ? 'border-violet-500/50 bg-violet-500/10'
+   644→   644→                        : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12]'
+   645→   645→                    }`}
+   646→   646→                  >
+   647→   647→                    <div className={`grid gap-0.5 mb-2 ${n === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+   648→   648→                      {Array.from({ length: n }).map((_, i) => (
+   649→   649→                        <div
+   650→   650→                          key={i}
+   651→   651→                          className={`w-3 h-3 rounded-sm ${
+   652→   652→                            numImages === n ? 'bg-violet-500/50' : 'bg-white/10'
+   653→   653→                          }`}
+   654→   654→                        />
+   655→   655→                      ))}
+   656→   656→                    </div>
+   657→   657→                    <span className={`text-sm font-medium ${numImages === n ? 'text-violet-300' : 'text-gray-400'}`}>
+   658→   658→                      {n}
+   659→   659→                    </span>
+   660→   660→                  </button>
+   661→   661→                ))}
+   662→   662→              </div>
+   663→   663→
+   664→   664→              {/* Credits info */}
+   665→   665→              <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+   666→   666→                <Zap className="w-4 h-4 text-amber-400" />
+   667→   667→                <span className="text-xs text-amber-300">
+   668→   668→                  This will use {numImages} credit{numImages > 1 ? 's' : ''} · You have <strong>{credits}</strong> remaining
+   669→   669→                </span>
+   670→   670→              </div>
+   671→   671→            </motion.div>
+   672→   672→          </div>
+   673→   673→
+   674→   674→          {/* Generate Button */}
+   675→   675→          <motion.div
+   676→   676→            initial={{ opacity: 0, y: 20 }}
+   677→   677→            whileInView={{ opacity: 1, y: 0 }}
+   678→   678→            viewport={{ once: true }}
+   679→   679→            transition={{ duration: 0.5, delay: 0.5 }}
+   680→   680→          >
+   681→   681→            {!isGenerating ? (
+   682→   682→              <button
+   683→   683→                onClick={handleGenerate}
+   684→   684→                disabled={!prompt.trim() || credits < numImages}
+   685→   685→                className="btn-generate w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] relative overflow-hidden"
+   686→   686→              >
+   687→   687→                <Wand2 className="w-5 h-5" />
+   688→   688→                <span>Generate {numImages} Image{numImages > 1 ? 's' : ''}</span>
+   689→   689→                <span className="text-white/60 text-sm">({numImages} credit{numImages > 1 ? 's' : ''})</span>
+   690→   690→              </button>
+   691→   691→            ) : (
+   692→   692→              <div className="space-y-3">
+   693→   693→                {/* Generating state */}
+   694→   694→                <button
+   695→   695→                  onClick={handleCancel}
+   696→   696→                  className="w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+   697→   697→                >
+   698→   698→                  <div className="absolute bottom-0 left-0 h-1.5 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 transition-all duration-500"
+   699→   699→                    style={{ width: `${generationProgress}%` }}
+   700→   700→                  />
+   701→   701→                  <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
+   702→   702→                  <div className="flex flex-col items-center">
+   703→   703→                    <span>{generationStatus || 'Generating...'}</span>
+   704→   704→                    <span className="text-xs text-gray-500 mt-0.5">{Math.round(generationProgress)}% · Click to cancel</span>
+   705→   705→                  </div>
+   706→   706→                </button>
+   707→   707→                <p className="text-center text-xs text-gray-600">
+   708→   708→                  AI generation typically takes 30-60 seconds. Please be patient.
+   709→   709→                </p>
+   710→   710→              </div>
+   711→   711→            )}
+   712→   712→
+   713→   713→            {credits < numImages && !isGenerating && (
+   714→   714→              <div className="mt-2 flex items-center gap-2 justify-center text-xs text-red-400">
+   715→   715→                <AlertCircle className="w-3 h-3" />
+   716→   716→                Not enough credits
+   717→   717→              </div>
+   718→   718→            )}
+   719→   719→          </motion.div>
+   720→   720→        </div>
+   721→   721→        )}
+   722→   722→      </div>
+   723→   723→    </section>
+   724→   724→  );
+   725→   725→}
+   726→   726→

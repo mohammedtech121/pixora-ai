@@ -46,6 +46,48 @@ function parseSize(size: string): { width: number; height: number } {
 }
 
 /**
+ * Save image buffer and return a URL — tries Firebase Storage first,
+ * then falls back to base64 data URL (works everywhere including Vercel)
+ */
+async function saveAndGetImageUrl(imageId: string, imageBuffer: Buffer): Promise<string> {
+  // Try Firebase Storage first (persistent, public URL)
+  if (isFirebaseConfigured()) {
+    try {
+      const { getAdminStorage } = await import('@/lib/firebase-admin');
+      const storage = getAdminStorage();
+      const bucket = storage.bucket();
+      const file = bucket.file(`generated/${imageId}.jpg`);
+      await file.save(imageBuffer, {
+        metadata: { contentType: 'image/jpeg', metadata: { imageId, createdAt: new Date().toISOString() } },
+        public: true,
+      });
+      const publicUrl = file.publicUrl();
+      console.log(`[Storage] Image saved to Firebase Storage: ${imageId}`);
+      return publicUrl;
+    } catch (error) {
+      console.error('[Storage] Firebase Storage save error, falling back to base64:', error);
+    }
+  }
+
+  // Try local filesystem (works in local development)
+  try {
+    const { saveImage } = await import('@/lib/storage');
+    const localUrl = await saveImage(imageId, imageBuffer);
+    // If it returned a local path (not a data URL), it was saved to disk
+    if (!localUrl.startsWith('data:')) {
+      return localUrl;
+    }
+  } catch (error) {
+    // Local filesystem not available (Vercel read-only), use base64
+    console.log('[Storage] Filesystem save failed, using base64 data URL');
+  }
+
+  // Fallback: Return base64 data URL (works everywhere, no storage needed)
+  const base64 = imageBuffer.toString('base64');
+  return `data:image/jpeg;base64,${base64}`;
+}
+
+/**
  * Generate an image using Hugging Face Inference API
  * Tries each model in the fallback chain until one succeeds
  */
@@ -261,8 +303,6 @@ export async function POST(request: NextRequest) {
   }> = [];
 
   try {
-    const { saveImage } = await import('@/lib/storage');
-
     for (let i = 0; i < validatedNumImages; i++) {
       try {
         console.log(`[Generate] Image ${i + 1}/${validatedNumImages}...`);
@@ -292,7 +332,7 @@ export async function POST(request: NextRequest) {
 
         if (imageBuffer) {
           const imageId = `img_${Date.now()}_${i}`;
-          const imageUrl = await saveImage(imageId, imageBuffer);
+          const imageUrl = await saveAndGetImageUrl(imageId, imageBuffer);
 
           generatedImages.push({
             id: imageId,
@@ -310,7 +350,7 @@ export async function POST(request: NextRequest) {
               const { setDoc: adminSetDoc } = await import('firebase-admin/firestore');
               await adminSetDoc(doc(db, 'user_images', imageId), {
                 userId: effectiveUserId,
-                url: imageUrl,
+                url: imageUrl.startsWith('data:') ? 'base64-data-url' : imageUrl,
                 prompt,
                 style: stylePreset,
                 size: validatedSize,
