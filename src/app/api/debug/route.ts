@@ -8,60 +8,47 @@ async function testUrl(label: string, url: string, method: string = 'GET', heade
       method,
       headers,
       body,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
     const contentType = resp.headers.get('content-type') || '';
     const text = await resp.text();
-    return `${label}: status ${resp.status}, type: ${contentType}, body: ${text.slice(0, 200)}`;
+    return `${label}: status ${resp.status}, type: ${contentType}, body: ${text.slice(0, 300)}`;
   } catch (err: unknown) {
     return `${label}: ERROR - ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
 export async function GET() {
-  const hfKey = process.env.HUGGINGFACE_API_KEY;
-  const hasHfKey = !!hfKey;
+  const hfKey = process.env.HUGGINGFACE_API_KEY!;
 
   const results: Record<string, string> = {};
 
-  // Test various HF API endpoint formats
-  results['api-inference'] = await testUrl(
-    'api-inference',
-    'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
+  // Test router with FLUX.1-schnell
+  results['router-flux'] = await testUrl(
+    'router-flux',
+    'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell',
     'POST',
     { 'Authorization': `Bearer ${hfKey}`, 'Content-Type': 'application/json' },
-    JSON.stringify({ inputs: 'a red circle' })
+    JSON.stringify({ inputs: 'a red circle on white background' })
   );
 
-  results['router'] = await testUrl(
-    'router',
-    'https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5',
+  // Test router with SDXL
+  results['router-sdxl'] = await testUrl(
+    'router-sdxl',
+    'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
     'POST',
     { 'Authorization': `Bearer ${hfKey}`, 'Content-Type': 'application/json' },
-    JSON.stringify({ inputs: 'a red circle' })
+    JSON.stringify({ inputs: 'a red circle on white background' })
   );
 
-  results['inference-direct'] = await testUrl(
-    'inference-direct',
-    'https://inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
+  // Test router with FLUX and parameters
+  results['router-flux-params'] = await testUrl(
+    'router-flux-params',
+    'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell',
     'POST',
     { 'Authorization': `Bearer ${hfKey}`, 'Content-Type': 'application/json' },
-    JSON.stringify({ inputs: 'a red circle' })
+    JSON.stringify({ inputs: 'a red circle on white background', parameters: { width: 512, height: 512 } })
   );
 
-  results['huggingface-api'] = await testUrl(
-    'huggingface-api',
-    'https://huggingface.co/api/models/runwayml/stable-diffusion-v1-5',
-  );
-
-  results['huggingface-inference'] = await testUrl(
-    'huggingface-inference',
-    'https://huggingface.co/api/inference/runwayml/stable-diffusion-v1-5',
-  );
-
-  return NextResponse.json({
-    hasHfKey,
-    results,
-    nodeVersion: process.version,
-  });
+  return NextResponse.json({ results });
 }
