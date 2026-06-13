@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Maximize2, Trash2, ImageIcon, X, Share2, Copy, Check } from 'lucide-react';
+import { Download, Maximize2, Trash2, ImageIcon, X, Share2, Copy, Check, RefreshCw, Loader2 } from 'lucide-react';
 import { useAppStore, type GeneratedImage } from '@/store/use-app-store';
+import { useAuth } from '@/contexts/auth-context';
 import { toast } from '@/hooks/use-toast';
 
 // Download helper — works with both base64 and URL images
@@ -46,7 +47,6 @@ async function downloadImage(image: GeneratedImage) {
     toast({ title: 'Downloaded!', description: 'Image saved to your device.' });
   } catch (error) {
     console.error('Download error:', error);
-    // Fallback: open in new tab
     const imageUrl = image.base64
       ? `data:image/png;base64,${image.base64}`
       : image.url;
@@ -57,7 +57,7 @@ async function downloadImage(image: GeneratedImage) {
   }
 }
 
-function ImageCard({ image, index, onDelete }: { image: GeneratedImage; index: number; onDelete: (id: string) => void }) {
+function ImageCard({ image, index, onDelete, isDeleting }: { image: GeneratedImage; index: number; onDelete: (id: string) => void; isDeleting: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -80,8 +80,8 @@ function ImageCard({ image, index, onDelete }: { image: GeneratedImage; index: n
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.4, delay: index * 0.1 }}
-      className="relative group rounded-2xl overflow-hidden border border-white/[0.06] bg-white/[0.02]"
+      transition={{ duration: 0.4, delay: index * 0.05 }}
+      className={`relative group rounded-2xl overflow-hidden border border-white/[0.06] bg-white/[0.02] ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -107,7 +107,7 @@ function ImageCard({ image, index, onDelete }: { image: GeneratedImage; index: n
 
         {/* Hover overlay */}
         <AnimatePresence>
-          {hovered && (
+          {hovered && !isDeleting && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -162,6 +162,13 @@ function ImageCard({ image, index, onDelete }: { image: GeneratedImage; index: n
         >
           <Download className="w-3.5 h-3.5 text-white/70" />
         </button>
+
+        {/* Deleting overlay */}
+        {isDeleting && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -212,7 +219,6 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
         className="relative max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-[#0a0a1a] border border-white/[0.08]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Image */}
         <div className="relative max-h-[70vh] overflow-hidden">
           {imageUrl ? (
             <img src={imageUrl} alt={image.prompt} className="w-full h-full object-contain" />
@@ -223,7 +229,6 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
           )}
         </div>
 
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 rounded-full bg-black/50 hover:bg-black/70 transition-colors"
@@ -231,9 +236,7 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
           <X className="w-5 h-5 text-white" />
         </button>
 
-        {/* Bottom panel with info & actions */}
         <div className="p-5 space-y-4">
-          {/* Prompt */}
           <div>
             <p className="text-sm text-white/90 leading-relaxed">{image.prompt}</p>
             <div className="flex items-center gap-2 mt-2">
@@ -241,12 +244,13 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
                 {image.style}
               </span>
               <span className="text-xs text-gray-500">{image.size}</span>
+              {image.model && (
+                <span className="text-xs text-gray-600">via {image.model}</span>
+              )}
             </div>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-2">
-            {/* Download button — main CTA */}
             <button
               onClick={() => downloadImage(image)}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-medium text-sm hover:bg-emerald-500/30 transition-all"
@@ -255,7 +259,6 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
               Download Image
             </button>
 
-            {/* Copy prompt */}
             <button
               onClick={handleCopyPrompt}
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 text-sm hover:bg-white/[0.08] transition-all"
@@ -264,7 +267,6 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
               {copiedPrompt ? 'Copied!' : 'Copy Prompt'}
             </button>
 
-            {/* Share */}
             <button
               onClick={handleShare}
               className="flex items-center justify-center px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-gray-300 text-sm hover:bg-white/[0.08] transition-all"
@@ -279,16 +281,110 @@ function ImageModal({ image, onClose }: { image: GeneratedImage; onClose: () => 
 }
 
 export function GallerySection() {
-  const generatedImages = useAppStore((s) => s.generatedImages);
-  const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
+  const {
+    generatedImages,
+    galleryLoading,
+    galleryLoaded,
+    setGeneratedImages,
+    removeGeneratedImage,
+    setGalleryLoading,
+  } = useAppStore();
 
-  const handleDelete = useCallback((id: string) => {
-    // In a real app, this would also delete from Firestore/Storage
-    const store = useAppStore.getState();
-    const updated = store.generatedImages.filter(img => img.id !== id);
-    useAppStore.setState({ generatedImages: updated });
-    toast({ title: 'Image deleted', description: 'Image removed from your gallery.' });
-  }, []);
+  const { user } = useAuth();
+  const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [galleryError, setGalleryError] = useState<string | null>(null);
+
+  // Fetch gallery from the server when user logs in
+  const fetchGallery = useCallback(async () => {
+    if (!user) {
+      setGeneratedImages([]);
+      return;
+    }
+
+    setGalleryLoading(true);
+    setGalleryError(null);
+
+    try {
+      console.log('[Gallery] Fetching images from server for user:', user.uid);
+      const response = await fetch(`/api/gallery?uid=${user.uid}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to load gallery (${response.status})`);
+      }
+
+      const data = await response.json();
+      console.log(`[Gallery] Loaded ${data.images?.length || 0} images from server`);
+
+      if (data.images && Array.isArray(data.images)) {
+        const images: GeneratedImage[] = data.images.map((img: any) => ({
+          id: img.id,
+          base64: '',
+          url: img.url || '',
+          prompt: img.prompt || '',
+          style: img.style || 'realistic',
+          size: img.size || '1024x1024',
+          timestamp: img.timestamp || Date.now(),
+          model: img.model || '',
+          negativePrompt: img.negativePrompt || '',
+          userId: img.userId || '',
+          createdAt: img.createdAt || '',
+        }));
+        setGeneratedImages(images);
+      }
+    } catch (error) {
+      console.error('[Gallery] Failed to fetch:', error);
+      setGalleryError('Failed to load your gallery. Please try again.');
+    } finally {
+      setGalleryLoading(false);
+    }
+  }, [user, setGeneratedImages, setGalleryLoading]);
+
+  // Load gallery on mount and when user changes
+  useEffect(() => {
+    if (user && !galleryLoaded) {
+      fetchGallery();
+    } else if (!user) {
+      setGeneratedImages([]);
+    }
+  }, [user, galleryLoaded, fetchGallery, setGeneratedImages]);
+
+  // Refresh gallery when a new image is generated (listen to generatedImages changes)
+  // This ensures newly generated images appear immediately
+  const prevImageCount = useAppStore((s) => s.generatedImages.length);
+
+  // Delete image from server and local state
+  const handleDelete = useCallback(async (id: string) => {
+    if (!user || deletingId) return;
+
+    setDeletingId(id);
+    console.log(`[Gallery] Deleting image: ${id}`);
+
+    try {
+      // Optimistically remove from local state
+      removeGeneratedImage(id);
+
+      // Delete from server
+      const response = await fetch(`/api/gallery/${id}?uid=${user.uid}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Delete failed');
+      }
+
+      console.log(`[Gallery] Image ${id} deleted successfully`);
+      toast({ title: 'Image deleted', description: 'Image removed from your gallery.' });
+    } catch (error) {
+      console.error('[Gallery] Delete failed:', error);
+      toast({ title: 'Delete failed', description: 'Could not delete the image. Please try again.', variant: 'destructive' });
+      // Re-fetch to restore consistency
+      fetchGallery();
+    } finally {
+      setDeletingId(null);
+    }
+  }, [user, deletingId, removeGeneratedImage, fetchGallery]);
 
   return (
     <section id="gallery" className="relative py-20 z-10">
@@ -310,7 +406,39 @@ export function GallerySection() {
           </p>
         </motion.div>
 
-        {generatedImages.length === 0 ? (
+        {/* Loading state */}
+        {galleryLoading && !galleryLoaded ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="glass-card p-12 text-center max-w-lg mx-auto"
+          >
+            <Loader2 className="w-10 h-10 text-violet-400 animate-spin mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-300 mb-2">Loading your gallery...</h3>
+            <p className="text-gray-500 text-sm">Fetching your AI-generated images from the cloud.</p>
+          </motion.div>
+        ) : galleryError ? (
+          /* Error state */
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-card p-12 text-center max-w-lg mx-auto"
+          >
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/20 flex items-center justify-center mx-auto mb-6">
+              <ImageIcon className="w-10 h-10 text-red-400/50" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-300 mb-2">Failed to load gallery</h3>
+            <p className="text-gray-500 text-sm mb-6">{galleryError}</p>
+            <button
+              onClick={fetchGallery}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 transition-all text-sm font-medium"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Try Again
+            </button>
+          </motion.div>
+        ) : generatedImages.length === 0 ? (
+          /* Empty state */
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             whileInView={{ opacity: 1, scale: 1 }}
@@ -322,23 +450,44 @@ export function GallerySection() {
             </div>
             <h3 className="text-xl font-semibold text-gray-300 mb-2">No images yet</h3>
             <p className="text-gray-500 text-sm mb-6">
-              Your AI-generated images will appear here. Start by creating your first image above!
+              Your AI-generated images will appear here and persist across sessions. Start by creating your first image!
             </p>
             <a
               href="#generate"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 transition-all text-sm font-medium"
             >
-              <Download className="w-4 h-4" />
+              <ImageIcon className="w-4 h-4" />
               Create Your First Image
             </a>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {generatedImages.map((image, index) => (
-              <div key={image.id} onClick={() => setSelectedImage(image)} className="cursor-pointer">
-                <ImageCard image={image} index={index} onDelete={handleDelete} />
-              </div>
-            ))}
+          /* Gallery grid */
+          <div className="space-y-4">
+            {/* Refresh button */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-500">{generatedImages.length} image{generatedImages.length !== 1 ? 's' : ''} in your gallery</span>
+              <button
+                onClick={fetchGallery}
+                disabled={galleryLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-400 hover:text-white hover:bg-white/[0.08] text-xs transition-all disabled:opacity-40"
+              >
+                <RefreshCw className={`w-3 h-3 ${galleryLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+              {generatedImages.map((image, index) => (
+                <div key={image.id} onClick={() => setSelectedImage(image)} className="cursor-pointer">
+                  <ImageCard
+                    image={image}
+                    index={index}
+                    onDelete={handleDelete}
+                    isDeleting={deletingId === image.id}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

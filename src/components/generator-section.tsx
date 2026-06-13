@@ -54,6 +54,7 @@ export function GeneratorSection() {
     showNegativePrompt, setShowNegativePrompt,
     credits, setCredits, deductCredits,
     addGeneratedImage, addPromptHistory,
+    setGalleryLoaded,
   } = useAppStore();
 
   const { user, userData, loading: authLoading } = useAuth();
@@ -231,7 +232,7 @@ export function GeneratorSection() {
 
         const imageCount = data.images.length;
 
-        // Add all generated images to gallery
+        // Add all generated images to gallery (with full metadata for persistence)
         for (const img of data.images) {
           addGeneratedImage({
             id: img.id,
@@ -241,8 +242,14 @@ export function GeneratorSection() {
             style: img.style as StylePreset,
             size: img.size as ImageSize,
             timestamp: img.timestamp,
+            model: img.model || '',
+            negativePrompt: negativePrompt || '',
+            userId: user?.uid || '',
           });
         }
+
+        // Mark gallery as needing a refresh from server on next visit
+        setGalleryLoaded(false);
 
         // Update credits from server response (source of truth)
         if (data.creditsRemaining !== undefined && data.creditsRemaining !== null) {

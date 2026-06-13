@@ -13,6 +13,10 @@ export interface GeneratedImage {
   style: StylePreset;
   size: ImageSize;
   timestamp: number;
+  model?: string;
+  negativePrompt?: string;
+  userId?: string;
+  createdAt?: string;
 }
 
 export interface PromptHistoryItem {
@@ -52,6 +56,8 @@ interface AppState {
 
   // Gallery
   generatedImages: GeneratedImage[];
+  galleryLoading: boolean;
+  galleryLoaded: boolean;
 
   // Prompt history
   promptHistory: PromptHistoryItem[];
@@ -80,6 +86,10 @@ interface AppState {
   setGenerationProgress: (progress: number) => void;
   setShowNegativePrompt: (show: boolean) => void;
   addGeneratedImage: (image: GeneratedImage) => void;
+  setGeneratedImages: (images: GeneratedImage[]) => void;
+  removeGeneratedImage: (id: string) => void;
+  setGalleryLoading: (loading: boolean) => void;
+  setGalleryLoaded: (loaded: boolean) => void;
   addPromptHistory: (item: PromptHistoryItem) => void;
   setCredits: (credits: number) => void;
   deductCredits: (amount: number) => void;
@@ -120,6 +130,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Gallery
   generatedImages: [],
+  galleryLoading: false,
+  galleryLoaded: false,
 
   // Prompt history
   promptHistory: [],
@@ -150,6 +162,12 @@ export const useAppStore = create<AppState>((set) => ({
   addGeneratedImage: (image) => set((state) => ({
     generatedImages: [image, ...state.generatedImages],
   })),
+  setGeneratedImages: (images) => set({ generatedImages: images, galleryLoaded: true }),
+  removeGeneratedImage: (id) => set((state) => ({
+    generatedImages: state.generatedImages.filter(img => img.id !== id),
+  })),
+  setGalleryLoading: (galleryLoading) => set({ galleryLoading }),
+  setGalleryLoaded: (galleryLoaded) => set({ galleryLoaded }),
   addPromptHistory: (item) => set((state) => ({
     promptHistory: [item, ...state.promptHistory].slice(0, 50),
   })),

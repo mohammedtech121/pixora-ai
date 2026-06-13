@@ -315,6 +315,9 @@ export async function POST(request: NextRequest) {
     prompt: string;
     style: string;
     size: string;
+    model: string;
+    negativePrompt: string;
+    userId: string;
     timestamp: number;
   }> = [];
 
@@ -356,6 +359,9 @@ export async function POST(request: NextRequest) {
             prompt,
             style: stylePreset,
             size: validatedSize,
+            model: usedMethod,
+            negativePrompt: negativePrompt || '',
+            userId: effectiveUserId,
             timestamp: Date.now(),
           });
 
@@ -364,14 +370,18 @@ export async function POST(request: NextRequest) {
             try {
               const db = getAdminDb();
               const { setDoc: adminSetDoc } = await import('firebase-admin/firestore');
-              await adminSetDoc(doc(db, 'user_images', imageId), {
+              const metadata = {
                 userId: effectiveUserId,
                 url: imageUrl.startsWith('data:') ? 'base64-data-url' : imageUrl,
                 prompt,
                 style: stylePreset,
                 size: validatedSize,
+                model: usedMethod,
+                negativePrompt: negativePrompt || '',
                 createdAt: serverTimestamp(),
-              });
+              };
+              await adminSetDoc(doc(db, 'user_images', imageId), metadata);
+              console.log(`[Generate] Image metadata saved to Firestore: ${imageId}`, metadata);
             } catch (imgMetaError) {
               console.error(`[Generate] Failed to save image metadata:`, imgMetaError);
             }
