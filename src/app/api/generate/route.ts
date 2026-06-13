@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
 import { setJob } from '@/lib/storage';
 import { getAdminDb, isFirebaseConfigured } from '@/lib/firebase-admin';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase-admin/firestore';
@@ -19,6 +18,13 @@ const STYLE_PRESETS: Record<string, string> = {
 };
 
 const VALID_SIZES = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'];
+
+// Hugging Face model fallback chain (free inference API)
+const HF_MODELS = [
+  'black-forest-labs/FLUX.1-schnell',
+  'stabilityai/stable-diffusion-xl-base-1.0',
+  'runwayml/stable-diffusion-v1-5',
+];
 
 interface GenerationJob {
   id: string;
@@ -48,6 +54,143 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       (err) => { clearTimeout(timer); reject(err); }
     );
   });
+}
+
+/**
+ * Parse size string like "1024x1024" into width and height numbers
+ */
+function parseSize(size: string): { width: number; height: number } {
+  const [w, h] = size.split('x').map(Number);
+  return { width: w || 1024, height: h || 1024 };
+}
+
+/**
+ * Generate an image using Hugging Face Inference API
+ * Tries each model in the fallback chain until one succeeds
+ */
+async function generateWithHuggingFace(
+  prompt: string,
+  size: string,
+): Promise<Buffer> {
+  const hfToken = process.env.HUGGINGFACE_API_KEY;
+  if (!hfToken) {
+    throw new Error('HUGGINGFACE_API_KEY is not configured. Please add it to your environment variables.');
+  }
+
+  const { width, height } = parseSize(size);
+  let lastError: Error | null = null;
+
+  for (const model of HF_MODELS) {
+    try {
+      console.log(`[HF] Trying model: ${model} (${width}x${height})`);
+
+      const response = await withTimeout(
+        fetch(`https://api-inference.huggingface.co/models/${model}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${hfToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+            parameters: {
+              width: Math.min(width, 1024),
+              height: Math.min(height, 1024),
+            },
+          }),
+        }),
+        60000
+      );
+
+      // Check if response is an image (binary data)
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('image')) {
+        const arrayBuffer = await response.arrayBuffer();
+        console.log(`[HF] Success with model: ${model} (${arrayBuffer.byteLength} bytes)`);
+        return Buffer.from(arrayBuffer);
+      }
+
+      // Response is JSON (error or model loading)
+      const jsonData = await response.json() as Record<string, unknown>;
+
+      if (response.status === 503 && jsonData.estimated_time) {
+        // Model is loading — wait and retry once
+        const waitTime = Math.min(Number(jsonData.estimated_time) * 1000, 30000);
+        console.log(`[HF] Model ${model} is loading, waiting ${Math.round(waitTime / 1000)}s...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+
+        const retryResponse = await withTimeout(
+          fetch(`https://api-inference.huggingface.co/models/${model}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${hfToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              inputs: prompt,
+              parameters: {
+                width: Math.min(width, 1024),
+                height: Math.min(height, 1024),
+              },
+            }),
+          }),
+          60000
+        );
+
+        const retryContentType = retryResponse.headers.get('content-type') || '';
+        if (retryContentType.includes('image')) {
+          const arrayBuffer = await retryResponse.arrayBuffer();
+          console.log(`[HF] Success with model ${model} after retry (${arrayBuffer.byteLength} bytes)`);
+          return Buffer.from(arrayBuffer);
+        }
+
+        const retryJson = await retryResponse.json() as Record<string, unknown>;
+        lastError = new Error(`HF model ${model} retry failed: ${retryJson.error || JSON.stringify(retryJson)}`);
+        continue;
+      }
+
+      lastError = new Error(`HF model ${model} error: ${jsonData.error || response.statusText || JSON.stringify(jsonData)}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(`[HF] Model ${model} failed:`, lastError.message);
+    }
+  }
+
+  throw new Error(lastError?.message || 'All Hugging Face models failed to generate an image');
+}
+
+/**
+ * Try generating with Z-AI SDK (works in local Z environment)
+ */
+async function generateWithZAI(
+  prompt: string,
+  size: string,
+): Promise<Buffer> {
+  const ZAI = (await import('z-ai-web-dev-sdk')).default;
+  const zai = await withTimeout(ZAI.create(), 15000);
+
+  const aiResponse = await withTimeout(
+    zai.images.generations.create({
+      prompt,
+      size: size as '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440',
+    }),
+    80000
+  ) as { data?: Array<{ base64?: string; url?: string }> };
+
+  const item = aiResponse.data?.[0];
+  if (!item || (!item.base64 && !item.url)) {
+    throw new Error('Z-AI SDK returned empty data');
+  }
+
+  if (item.base64) {
+    return Buffer.from(item.base64, 'base64');
+  }
+
+  // Download from URL
+  const imgResp = await fetch(item.url!);
+  const arrayBuffer = await imgResp.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 export async function POST(request: NextRequest) {
@@ -90,7 +233,6 @@ export async function POST(request: NextRequest) {
 
         // Enforce plan restrictions for free users
         if (userPlan === 'free') {
-          // Free users can only use basic styles
           if (!FREE_STYLES.includes(stylePreset)) {
             return NextResponse.json({
               error: `The "${stylePreset}" style requires a Starter or Pro plan. Upgrade to unlock all styles.`,
@@ -98,7 +240,6 @@ export async function POST(request: NextRequest) {
               restrictedFeature: 'style',
             }, { status: 403 });
           }
-          // Free users can only use 1024x1024
           if (validatedSize !== FREE_SIZE) {
             return NextResponse.json({
               error: `The "${validatedSize}" resolution requires a Starter or Pro plan. Upgrade to unlock all resolutions.`,
@@ -106,7 +247,6 @@ export async function POST(request: NextRequest) {
               restrictedFeature: 'size',
             }, { status: 403 });
           }
-          // Free users cannot use negative prompts
           if (negativePrompt && negativePrompt.trim()) {
             return NextResponse.json({
               error: 'Negative prompts require a Starter or Pro plan. Upgrade to unlock this feature.',
@@ -119,6 +259,12 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('[Generate] Credit check error:', error);
     }
+  }
+
+  // Check if at least one generation method is available
+  const hfToken = process.env.HUGGINGFACE_API_KEY;
+  if (!hfToken) {
+    console.warn('[Generate] HUGGINGFACE_API_KEY not set. Image generation will rely on Z-AI SDK fallback (local only).');
   }
 
   // Create a job
@@ -153,84 +299,71 @@ export async function POST(request: NextRequest) {
     try {
       const { saveImage } = await import('@/lib/storage');
 
-      let zai;
-      try {
-        zai = await withTimeout(ZAI.create(), 15000);
-      } catch (initError) {
-        job.status = 'error';
-        job.error = 'AI service initialization failed. Please try again.';
-        await setJob(jobId, job);
-        console.error(`[Generate] Job ${jobId} SDK init failed:`, initError);
-        return;
-      }
-
       for (let i = 0; i < validatedNumImages; i++) {
         try {
           console.log(`[Generate] Job ${jobId} - image ${i + 1}/${validatedNumImages}...`);
 
-          const aiResponse = await withTimeout(
-            zai.images.generations.create({
-              prompt: enhancedPrompt,
-              size: validatedSize as '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440',
-            }),
-            80000
-          ) as { data?: Array<{ base64?: string; url?: string }> };
+          let imageBuffer: Buffer | null = null;
+          let usedMethod = 'none';
 
-          const item = aiResponse.data?.[0];
-          if (item && (item.base64 || item.url)) {
+          // Method 1: Hugging Face Inference API (works on Vercel + local)
+          if (hfToken) {
+            try {
+              imageBuffer = await generateWithHuggingFace(enhancedPrompt, validatedSize);
+              usedMethod = 'huggingface';
+            } catch (hfError) {
+              console.error(`[Generate] Job ${jobId} - HF failed:`, hfError instanceof Error ? hfError.message : hfError);
+            }
+          }
+
+          // Method 2: Z-AI SDK fallback (works in local Z environment only)
+          if (!imageBuffer) {
+            try {
+              imageBuffer = await generateWithZAI(enhancedPrompt, validatedSize);
+              usedMethod = 'zai-sdk';
+            } catch (zaiError) {
+              console.error(`[Generate] Job ${jobId} - Z-AI SDK failed:`, zaiError instanceof Error ? zaiError.message : zaiError);
+            }
+          }
+
+          if (imageBuffer) {
             const imageId = `img_${Date.now()}_${i}`;
-            let imageBuffer: Buffer | null = null;
+            const imageUrl = await saveImage(imageId, imageBuffer);
 
-            if (item.base64) {
-              imageBuffer = Buffer.from(item.base64, 'base64');
-            } else if (item.url) {
+            job.images.push({
+              id: imageId,
+              url: imageUrl,
+              prompt,
+              style: stylePreset,
+              size: validatedSize,
+              timestamp: Date.now(),
+            });
+
+            // Update job after each image so polling picks it up
+            await setJob(jobId, job);
+
+            // Save image metadata to Firestore (if configured)
+            if (isFirebaseConfigured() && effectiveUserId !== 'anonymous') {
               try {
-                const imgResp = await fetch(item.url);
-                const arrayBuffer = await imgResp.arrayBuffer();
-                imageBuffer = Buffer.from(arrayBuffer);
-              } catch (dlError) {
-                console.error(`[Generate] Job ${jobId} - failed to download image:`, dlError);
+                const db = getAdminDb();
+                const { setDoc: adminSetDoc } = await import('firebase-admin/firestore');
+                await adminSetDoc(doc(db, 'user_images', imageId), {
+                  userId: effectiveUserId,
+                  jobId,
+                  url: imageUrl,
+                  prompt,
+                  style: stylePreset,
+                  size: validatedSize,
+                  createdAt: serverTimestamp(),
+                });
+              } catch (imgMetaError) {
+                console.error(`[Generate] Failed to save image metadata:`, imgMetaError);
               }
             }
 
-            if (imageBuffer) {
-              const imageUrl = await saveImage(imageId, imageBuffer);
-
-              job.images.push({
-                id: imageId,
-                url: imageUrl,
-                prompt,
-                style: stylePreset,
-                size: validatedSize,
-                timestamp: Date.now(),
-              });
-
-              // Update job after each image so polling picks it up
-              await setJob(jobId, job);
-
-              // Save image metadata to Firestore (if configured)
-              if (isFirebaseConfigured() && effectiveUserId !== 'anonymous') {
-                try {
-                  const db = getAdminDb();
-                  const { setDoc: adminSetDoc } = await import('firebase-admin/firestore');
-                  await adminSetDoc(doc(db, 'user_images', imageId), {
-                    userId: effectiveUserId,
-                    jobId,
-                    url: imageUrl,
-                    prompt,
-                    style: stylePreset,
-                    size: validatedSize,
-                    createdAt: serverTimestamp(),
-                  });
-                } catch (imgMetaError) {
-                  console.error(`[Generate] Failed to save image metadata:`, imgMetaError);
-                }
-              }
-
-              console.log(`[Generate] Job ${jobId} - image ${i + 1} saved (${imageId})`);
-            }
+            console.log(`[Generate] Job ${jobId} - image ${i + 1} saved (${imageId}) via ${usedMethod}`);
           } else {
-            console.error(`[Generate] Job ${jobId} - image ${i + 1} returned empty data`);
+            console.error(`[Generate] Job ${jobId} - image ${i + 1} failed: all generation methods exhausted`);
           }
         } catch (imgError) {
           console.error(`[Generate] Job ${jobId} - image ${i + 1} failed:`, imgError instanceof Error ? imgError.message : imgError);

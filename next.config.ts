@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -21,6 +20,21 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'firebasestorage.googleapis.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'huggingface.co',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.hf.co',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.huggingface.co',
         pathname: '/**',
       },
     ],
