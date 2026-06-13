@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 
 const footerLinks = {
-  Product: ['Features', 'Pricing', 'API', 'Integrations', 'Changelog'],
+  Product: ['Features', 'Pricing', 'Integrations', 'Changelog'],
   Resources: ['Documentation', 'Tutorials', 'Blog', 'Community', 'Templates'],
   Company: ['About', 'Careers', 'Press', 'Contact', 'Partners'],
   Legal: ['Privacy', 'Terms', 'Security', 'Cookies'],

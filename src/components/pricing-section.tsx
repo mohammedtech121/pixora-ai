@@ -66,7 +66,6 @@ const plans = [
       'Advanced negative prompts',
       'Prompt enhancement AI',
       'Private gallery & collections',
-      'API access',
       'Priority support',
     ],
     cta: 'Start Pro Plan',

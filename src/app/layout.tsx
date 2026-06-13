@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   keywords: ["AI", "image generation", "art", "creative", "Pixora", "artificial intelligence", "text to image"],
   authors: [{ name: "Pixora.ai" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/favicon.svg",
   },
   openGraph: {
     title: "Pixora.ai - Create Anything You Can Imagine",

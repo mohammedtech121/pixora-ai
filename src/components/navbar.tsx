@@ -42,7 +42,9 @@ export function Navbar() {
       const response = await fetch(`/api/credits?uid=${user.uid}`);
       if (response.ok) {
         const data = await response.json();
-        setCredits(data.credits ?? 10);
+        if (typeof data.credits === 'number') {
+          setCredits(data.credits);
+        }
       }
     } catch {
       // Silently fail
@@ -104,7 +106,7 @@ export function Navbar() {
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
             {/* Credits */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] transition-all duration-300">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-sm font-medium text-gray-300">{creditsVal}</span>
               <span className="text-xs text-gray-500">credits</span>

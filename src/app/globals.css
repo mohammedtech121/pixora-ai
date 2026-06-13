@@ -302,10 +302,57 @@
   background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 25%, #d946ef 50%, #8b5cf6 75%, #06b6d4 100%);
   background-size: 300% 300%;
   animation: gradient-shift 4s ease infinite;
+  position: relative;
+  overflow: hidden;
 }
 
 .btn-generate:hover {
   box-shadow: 0 0 30px rgba(139,92,246,0.5), 0 0 60px rgba(217,70,239,0.3);
+}
+
+/* Button ripple effect */
+@keyframes btn-ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.btn-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  animation: btn-ripple 0.6s ease-out forwards;
+  pointer-events: none;
+}
+
+/* Button click pulse */
+@keyframes btn-click-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 20px rgba(139, 92, 246, 0);
+  }
+}
+
+.btn-click-pulse {
+  animation: btn-click-pulse 0.4s ease-out;
+}
+
+/* Success checkmark animation */
+@keyframes success-pop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-success-pop {
+  animation: success-pop 0.4s ease-out forwards;
 }
 
 /* Image reveal */

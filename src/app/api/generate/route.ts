@@ -387,6 +387,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Deduct credits from user in Firestore
+    let finalCreditsRemaining: number | undefined = undefined;
     if (generatedImages.length > 0 && effectiveUserId !== 'anonymous' && isFirebaseConfigured()) {
       try {
         const db = getAdminDb();
@@ -399,6 +400,7 @@ export async function POST(request: NextRequest) {
             credits: newCredits,
             updatedAt: serverTimestamp(),
           });
+          finalCreditsRemaining = newCredits;
           console.log(`[Generate] Deducted ${generatedImages.length} credits from user ${effectiveUserId}. New balance: ${newCredits}`);
         }
       } catch (creditError) {
@@ -419,9 +421,9 @@ export async function POST(request: NextRequest) {
       status: 'complete',
       images: generatedImages,
       creditsUsed: generatedImages.length,
-      creditsRemaining: effectiveUserId !== 'anonymous' && isFirebaseConfigured()
+      creditsRemaining: finalCreditsRemaining ?? (effectiveUserId !== 'anonymous' && isFirebaseConfigured()
         ? await getCreditsRemaining(effectiveUserId)
-        : undefined,
+        : undefined),
     });
 
   } catch (error: unknown) {

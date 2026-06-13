@@ -61,6 +61,7 @@ export function GeneratorSection() {
   const [promptPlaceholder, setPromptPlaceholder] = useState(placeholderPrompts[0]);
   const [enhancing, setEnhancing] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>('');
+  const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isGeneratingRef = useRef(false);
@@ -96,6 +97,17 @@ export function GeneratorSection() {
         .catch(() => {});
     }
   }, [user, setCredits]);
+
+  const handleRippleClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const id = Date.now();
+    setRipples(prev => [...prev, { id, x, y }]);
+    setTimeout(() => {
+      setRipples(prev => prev.filter(r => r.id !== id));
+    }, 700);
+  }, []);
 
   const handleEnhance = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -232,17 +244,21 @@ export function GeneratorSection() {
         deductCredits(imageCount);
 
         // Update credits from server response if available
-        if (data.creditsRemaining !== undefined) {
+        if (data.creditsRemaining !== undefined && data.creditsRemaining !== null) {
           setCredits(data.creditsRemaining);
         } else if (user) {
-          // Fallback: fetch credits from server
-          try {
-            const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
-            if (creditsRes.ok) {
-              const creditsData = await creditsRes.json();
-              setCredits(creditsData.credits ?? credits - imageCount);
-            }
-          } catch {}
+          // Fallback: fetch credits from server after a short delay to allow Firestore write to propagate
+          setTimeout(async () => {
+            try {
+              const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
+              if (creditsRes.ok) {
+                const creditsData = await creditsRes.json();
+                if (typeof creditsData.credits === 'number') {
+                  setCredits(creditsData.credits);
+                }
+              }
+            } catch {}
+          }, 1000);
         }
 
         addPromptHistory({
@@ -649,14 +665,22 @@ export function GeneratorSection() {
           >
             {!isGenerating ? (
               <motion.button
-                onClick={handleGenerate}
+                onClick={(e) => { handleRippleClick(e); handleGenerate(); }}
                 disabled={!prompt.trim() || credits < numImages}
-                whileTap={{ scale: 0.95 }}
+                whileTap={{ scale: 0.96 }}
                 whileHover={{ scale: 1.02 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 17 }}
                 className="btn-generate w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 relative overflow-hidden group"
               >
-                {/* Ripple effect layer */}
+                {/* Ripple effects */}
+                {ripples.map(ripple => (
+                  <span
+                    key={ripple.id}
+                    className="btn-ripple"
+                    style={{ left: ripple.x - 10, top: ripple.y - 10, width: 20, height: 20 }}
+                  />
+                ))}
+                {/* Hover effect layer */}
                 <span className="absolute inset-0 overflow-hidden rounded-xl">
                   <span className="absolute inset-0 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   <span className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity duration-100" />
@@ -668,19 +692,32 @@ export function GeneratorSection() {
             ) : (
               <div className="space-y-3">
                 {/* Generating state */}
-                <button
+                <motion.button
                   onClick={handleCancel}
-                  className="w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/15"
                 >
-                  <div className="absolute bottom-0 left-0 h-1.5 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 transition-all duration-500"
+                  {/* Animated progress bar */}
+                  <div className="absolute bottom-0 left-0 h-1.5 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 transition-all duration-500 rounded-full"
                     style={{ width: `${generationProgress}%` }}
                   />
-                  <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
-                  <div className="flex flex-col items-center">
-                    <span>{generationStatus || 'Generating...'}</span>
-                    <span className="text-xs text-gray-500 mt-0.5">{Math.round(generationProgress)}% · Click to cancel</span>
+                  {/* Glow effect on progress */}
+                  <div className="absolute bottom-0 left-0 h-1.5 transition-all duration-500"
+                    style={{ width: `${generationProgress}%` }}
+                  >
+                    <div className="absolute right-0 -top-1 w-8 h-4 bg-violet-500/30 blur-md rounded-full" />
                   </div>
-                </button>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  >
+                    <Sparkles className="w-5 h-5 text-violet-400" />
+                  </motion.div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-violet-200">{generationStatus || 'Generating...'}</span>
+                    <span className="text-xs text-violet-400/60 mt-0.5">{Math.round(generationProgress)}% · Click to cancel</span>
+                  </div>
+                </motion.button>
                 <p className="text-center text-xs text-gray-600">
                   AI generation typically takes 30-60 seconds. Please be patient.
                 </p>
