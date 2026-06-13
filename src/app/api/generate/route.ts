@@ -216,6 +216,22 @@ async function generateWithZAI(
   return Buffer.from(arrayBuffer);
 }
 
+/**
+ * Get remaining credits for a user from Firestore
+ */
+async function getCreditsRemaining(userId: string): Promise<number | undefined> {
+  try {
+    const db = getAdminDb();
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists) {
+      return userDoc.data().credits ?? 0;
+    }
+  } catch (error) {
+    console.error('[Generate] Failed to get credits remaining:', error);
+  }
+  return undefined;
+}
+
 export async function POST(request: NextRequest) {
   let body;
   try {
@@ -403,6 +419,9 @@ export async function POST(request: NextRequest) {
       status: 'complete',
       images: generatedImages,
       creditsUsed: generatedImages.length,
+      creditsRemaining: effectiveUserId !== 'anonymous' && isFirebaseConfigured()
+        ? await getCreditsRemaining(effectiveUserId)
+        : undefined,
     });
 
   } catch (error: unknown) {

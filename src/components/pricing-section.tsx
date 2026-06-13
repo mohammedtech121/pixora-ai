@@ -172,16 +172,19 @@ export function PricingSection() {
               </ul>
 
               {/* CTA */}
-              <button
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
                 className={`w-full py-3 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
                   plan.popular
-                    ? 'btn-generate text-white hover:scale-[1.02]'
+                    ? 'btn-generate text-white'
                     : 'bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] hover:border-white/[0.15]'
                 }`}
               >
                 {plan.cta}
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </motion.button>
             </motion.div>
           ))}
         </div>

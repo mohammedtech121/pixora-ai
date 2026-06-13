@@ -228,10 +228,14 @@ export function GeneratorSection() {
           });
         }
 
+        // Deduct credits locally (always, even for anonymous users)
         deductCredits(imageCount);
 
-        // Refresh credits from server
-        if (user) {
+        // Update credits from server response if available
+        if (data.creditsRemaining !== undefined) {
+          setCredits(data.creditsRemaining);
+        } else if (user) {
+          // Fallback: fetch credits from server
           try {
             const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
             if (creditsRes.ok) {
@@ -248,9 +252,10 @@ export function GeneratorSection() {
           timestamp: Date.now(),
         });
 
+        const updatedCredits = data.creditsRemaining !== undefined ? data.creditsRemaining : Math.max(0, credits - imageCount);
         toast({
           title: 'Image Generated!',
-          description: `${imageCount} image${imageCount > 1 ? 's' : ''} created successfully.`,
+          description: `${imageCount} image${imageCount > 1 ? 's' : ''} created. ${updatedCredits} credits remaining.`,
         });
 
         setTimeout(() => {
@@ -537,7 +542,7 @@ export function GeneratorSection() {
                 {sizeOptions.map((size) => {
                   const isPremiumSize = size.id !== FREE_SIZE && (userData?.plan === 'free' || !userData?.plan);
                   return (
-                    <button
+                    <motion.button
                       key={size.id}
                       onClick={() => {
                         if (isPremiumSize) {
@@ -551,6 +556,9 @@ export function GeneratorSection() {
                         setSelectedSize(size.id);
                       }}
                       disabled={isGenerating}
+                      whileHover={{ scale: isPremiumSize ? 1 : 1.05 }}
+                      whileTap={{ scale: isPremiumSize ? 1 : 0.95 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 17 }}
                       className={`relative p-2.5 rounded-xl border transition-all duration-200 text-center disabled:opacity-50 ${
                         isPremiumSize
                           ? 'border-amber-500/20 bg-amber-500/[0.03] cursor-not-allowed'
@@ -575,7 +583,7 @@ export function GeneratorSection() {
                       {isPremiumSize && (
                         <Lock className="absolute top-1.5 right-1.5 w-2.5 h-2.5 text-amber-400/60" />
                       )}
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
@@ -592,10 +600,13 @@ export function GeneratorSection() {
               <label className="text-sm font-medium text-gray-300 mb-4 block">Number of Images</label>
               <div className="grid grid-cols-4 gap-2">
                 {[1, 2, 3, 4].map((n) => (
-                  <button
+                  <motion.button
                     key={n}
                     onClick={() => setNumImages(n)}
                     disabled={isGenerating}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
                     className={`p-3 rounded-xl border transition-all duration-200 flex flex-col items-center disabled:opacity-50 ${
                       numImages === n
                         ? 'border-violet-500/50 bg-violet-500/10'
@@ -615,7 +626,7 @@ export function GeneratorSection() {
                     <span className={`text-sm font-medium ${numImages === n ? 'text-violet-300' : 'text-gray-400'}`}>
                       {n}
                     </span>
-                  </button>
+                  </motion.button>
                 ))}
               </div>
 
@@ -637,15 +648,23 @@ export function GeneratorSection() {
             transition={{ duration: 0.5, delay: 0.5 }}
           >
             {!isGenerating ? (
-              <button
+              <motion.button
                 onClick={handleGenerate}
                 disabled={!prompt.trim() || credits < numImages}
-                className="btn-generate w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] relative overflow-hidden"
+                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.02 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                className="btn-generate w-full py-4 rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 relative overflow-hidden group"
               >
-                <Wand2 className="w-5 h-5" />
-                <span>Generate {numImages} Image{numImages > 1 ? 's' : ''}</span>
-                <span className="text-white/60 text-sm">({numImages} credit{numImages > 1 ? 's' : ''})</span>
-              </button>
+                {/* Ripple effect layer */}
+                <span className="absolute inset-0 overflow-hidden rounded-xl">
+                  <span className="absolute inset-0 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <span className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity duration-100" />
+                </span>
+                <Wand2 className="w-5 h-5 relative z-10 group-hover:rotate-12 transition-transform duration-300" />
+                <span className="relative z-10">Generate {numImages} Image{numImages > 1 ? 's' : ''}</span>
+                <span className="text-white/60 text-sm relative z-10">({numImages} credit{numImages > 1 ? 's' : ''})</span>
+              </motion.button>
             ) : (
               <div className="space-y-3">
                 {/* Generating state */}
