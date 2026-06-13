@@ -60,3 +60,29 @@ Stage Summary:
 - Key model: black-forest-labs/FLUX.1-schnell via router.huggingface.co
 - Images returned as base64 data URLs (no filesystem storage needed)
 - Frontend updated to handle synchronous response directly
+
+---
+Task ID: 1
+Agent: main
+Task: Fix credits not deducting, remove Z branding, remove API access, add click animations
+
+Work Log:
+- Analyzed 3 screenshots using VLM to identify UI issues
+- Found credits not deducting: backend deduction works but response didn't reliably return creditsRemaining; frontend also had race conditions
+- Found "Z" appearing from Z-AI favicon: layout.tsx had icon pointing to z-cdn.chatglm.cn
+- Found "API access" listed in Pro plan features in pricing-section.tsx
+- Fixed credits: backend now stores finalCreditsRemaining after deduction instead of making a separate read; frontend uses setTimeout for server sync with null checks
+- Replaced Z-AI favicon with custom Pixora favicon generated via AI
+- Removed "API access" from Pro plan features list
+- Removed "API" link from footer Product links
+- Added ripple click animation to generate button
+- Improved generating state UI with animated Sparkles icon, violet border, and progress glow
+- Added CSS animations: btn-ripple, btn-click-pulse, success-pop
+- Built project successfully, pushed to GitHub for Vercel deployment
+
+Stage Summary:
+- Credits deduction now works reliably with immediate local update + server sync
+- Z branding completely removed (favicon replaced)
+- API access removed from pricing and footer
+- Click animations added for better UX
+- Deployed via git push to Vercel
