@@ -55,4 +55,4 @@ server.log
 # Generated images (stored in cloud on production)
 /generated-images/
 # Upload directory
-/upload/
+/upload/tool-results/
