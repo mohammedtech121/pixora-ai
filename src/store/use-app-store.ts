@@ -58,6 +58,7 @@ interface AppState {
 
   // Credits
   credits: number;
+  creditsLastUpdatedAt: number;
 
   // User
   user: User | null;
@@ -74,7 +75,7 @@ interface AppState {
   setNegativePrompt: (prompt: string) => void;
   setSelectedStyle: (style: StylePreset) => void;
   setSelectedSize: (size: ImageSize) => void;
-  setNumImages: (num: number) => void;
+  setNumImages: (numImages: number) => void;
   setIsGenerating: (isGenerating: boolean) => void;
   setGenerationProgress: (progress: number) => void;
   setShowNegativePrompt: (show: boolean) => void;
@@ -125,6 +126,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Credits
   credits: 10,
+  creditsLastUpdatedAt: 0,
 
   // User
   user: null,
@@ -151,9 +153,10 @@ export const useAppStore = create<AppState>((set) => ({
   addPromptHistory: (item) => set((state) => ({
     promptHistory: [item, ...state.promptHistory].slice(0, 50),
   })),
-  setCredits: (credits) => set({ credits }),
+  setCredits: (credits) => set({ credits, creditsLastUpdatedAt: Date.now() }),
   deductCredits: (amount) => set((state) => ({
     credits: Math.max(0, state.credits - amount),
+    creditsLastUpdatedAt: Date.now(),
   })),
   setUser: (user) => set({ user }),
   setActiveSection: (activeSection) => set({ activeSection }),

@@ -27,15 +27,20 @@ export function Navbar() {
   const creditsVal = useAppStore((s) => s.credits);
   const { user, userData, signOut, loading } = useAuth();
 
-  // Sync credits from auth context to store
+  // Sync credits from auth context to store (only on initial load, not after generation)
   const setCredits = useAppStore((s) => s.setCredits);
   useEffect(() => {
     if (userData?.credits !== undefined) {
-      setCredits(userData.credits);
+      const lastUpdated = useAppStore.getState().creditsLastUpdatedAt;
+      // Only override from auth data if we haven't set credits recently
+      if (Date.now() - lastUpdated > 5000) {
+        setCredits(userData.credits);
+      }
     }
   }, [userData?.credits, setCredits]);
 
   // Fetch credits from API periodically when user is logged in
+  // But DON'T overwrite if credits were just updated (e.g., after generation)
   const fetchCredits = useCallback(async () => {
     if (!user) return;
     try {
@@ -43,7 +48,11 @@ export function Navbar() {
       if (response.ok) {
         const data = await response.json();
         if (typeof data.credits === 'number') {
-          setCredits(data.credits);
+          // Only update if credits weren't recently changed locally (within 5s)
+          const lastUpdated = useAppStore.getState().creditsLastUpdatedAt;
+          if (Date.now() - lastUpdated > 5000) {
+            setCredits(data.credits);
+          }
         }
       }
     } catch {

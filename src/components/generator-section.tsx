@@ -90,8 +90,12 @@ export function GeneratorSection() {
       fetch(`/api/credits?uid=${user.uid}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
-          if (data?.credits !== undefined) {
-            setCredits(data.credits);
+          if (data?.credits !== undefined && typeof data.credits === 'number') {
+            // Only update on initial load (creditsLastUpdatedAt === 0)
+            const lastUpdated = useAppStore.getState().creditsLastUpdatedAt;
+            if (lastUpdated === 0) {
+              setCredits(data.credits);
+            }
           }
         })
         .catch(() => {});
@@ -240,26 +244,33 @@ export function GeneratorSection() {
           });
         }
 
-        // Deduct credits locally (always, even for anonymous users)
-        deductCredits(imageCount);
-
-        // Update credits from server response if available
+        // Update credits from server response (source of truth)
         if (data.creditsRemaining !== undefined && data.creditsRemaining !== null) {
+          // Server returned the authoritative credit count after deduction
           setCredits(data.creditsRemaining);
-        } else if (user) {
-          // Fallback: fetch credits from server after a short delay to allow Firestore write to propagate
-          setTimeout(async () => {
-            try {
-              const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
-              if (creditsRes.ok) {
-                const creditsData = await creditsRes.json();
-                if (typeof creditsData.credits === 'number') {
-                  setCredits(creditsData.credits);
+        } else {
+          // Fallback: deduct locally and then sync from server
+          deductCredits(imageCount);
+          if (user) {
+            // Fetch real credits from server after a short delay for Firestore propagation
+            setTimeout(async () => {
+              try {
+                const creditsRes = await fetch(`/api/credits?uid=${user.uid}`);
+                if (creditsRes.ok) {
+                  const creditsData = await creditsRes.json();
+                  if (typeof creditsData.credits === 'number') {
+                    setCredits(creditsData.credits);
+                  }
                 }
-              }
-            } catch {}
-          }, 1000);
+              } catch {}
+            }, 2000);
+          }
         }
+
+        // Calculate display credits for toast
+        const displayCredits = data.creditsRemaining !== undefined && data.creditsRemaining !== null
+          ? data.creditsRemaining
+          : Math.max(0, credits - imageCount);
 
         addPromptHistory({
           id: `ph_${Date.now()}`,
@@ -268,10 +279,9 @@ export function GeneratorSection() {
           timestamp: Date.now(),
         });
 
-        const updatedCredits = data.creditsRemaining !== undefined ? data.creditsRemaining : Math.max(0, credits - imageCount);
         toast({
           title: 'Image Generated!',
-          description: `${imageCount} image${imageCount > 1 ? 's' : ''} created. ${updatedCredits} credits remaining.`,
+          description: `${imageCount} image${imageCount > 1 ? 's' : ''} created. ${displayCredits} credits remaining.`,
         });
 
         setTimeout(() => {
