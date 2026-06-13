@@ -370,18 +370,28 @@ export async function POST(request: NextRequest) {
             try {
               const db = getAdminDb();
               const { setDoc: adminSetDoc } = await import('firebase-admin/firestore');
+              // Store the URL - for Firebase Storage URLs, this is a public URL
+              // For data URLs (fallback), only store if under 800KB to stay within Firestore limits
+              let storedUrl = imageUrl;
+              if (imageUrl.startsWith('data:') && imageUrl.length > 800000) {
+                // Data URL too large for Firestore - store a placeholder
+                // The image was already returned in the API response so the user sees it
+                console.warn(`[Generate] Image ${imageId} data URL too large for Firestore (${Math.round(imageUrl.length / 1024)}KB), storing placeholder`);
+                storedUrl = '';
+              }
               const metadata = {
                 userId: effectiveUserId,
-                url: imageUrl.startsWith('data:') ? 'base64-data-url' : imageUrl,
+                url: storedUrl,
                 prompt,
                 style: stylePreset,
                 size: validatedSize,
                 model: usedMethod,
                 negativePrompt: negativePrompt || '',
                 createdAt: serverTimestamp(),
+                timestamp: Date.now(),
               };
               await adminSetDoc(doc(db, 'user_images', imageId), metadata);
-              console.log(`[Generate] Image metadata saved to Firestore: ${imageId}`, metadata);
+              console.log(`[Generate] Image metadata saved to Firestore: ${imageId}`);
             } catch (imgMetaError) {
               console.error(`[Generate] Failed to save image metadata:`, imgMetaError);
             }

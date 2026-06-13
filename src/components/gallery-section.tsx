@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, Maximize2, Trash2, ImageIcon, X, Share2, Copy, Check, RefreshCw, Loader2 } from 'lucide-react';
 import { useAppStore, type GeneratedImage } from '@/store/use-app-store';
@@ -341,11 +341,22 @@ export function GallerySection() {
   }, [user, setGeneratedImages, setGalleryLoading]);
 
   // Load gallery on mount and when user changes
+  // Re-fetch when galleryLoaded becomes false (triggered after new image generation)
+  const hasFetchedOnce = useRef(false);
   useEffect(() => {
-    if (user && !galleryLoaded) {
-      fetchGallery();
-    } else if (!user) {
+    if (!user) {
       setGeneratedImages([]);
+      hasFetchedOnce.current = false;
+      return;
+    }
+    if (!galleryLoaded) {
+      // On initial load, fetch immediately. After generation, add a small delay for Firestore propagation.
+      const delay = hasFetchedOnce.current ? 1500 : 0;
+      hasFetchedOnce.current = true;
+      const timer = setTimeout(() => {
+        fetchGallery();
+      }, delay);
+      return () => clearTimeout(timer);
     }
   }, [user, galleryLoaded, fetchGallery, setGeneratedImages]);
 

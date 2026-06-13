@@ -90,6 +90,7 @@ interface AppState {
   removeGeneratedImage: (id: string) => void;
   setGalleryLoading: (loading: boolean) => void;
   setGalleryLoaded: (loaded: boolean) => void;
+  triggerGalleryRefresh: () => void;
   addPromptHistory: (item: PromptHistoryItem) => void;
   setCredits: (credits: number) => void;
   deductCredits: (amount: number) => void;
@@ -162,12 +163,22 @@ export const useAppStore = create<AppState>((set) => ({
   addGeneratedImage: (image) => set((state) => ({
     generatedImages: [image, ...state.generatedImages],
   })),
-  setGeneratedImages: (images) => set({ generatedImages: images, galleryLoaded: true }),
+  setGeneratedImages: (images) => set((state) => {
+    // Merge: keep any local-only images (not yet on server) and add server images
+    // This prevents losing just-generated images during a gallery refresh
+    const serverIds = new Set(images.map(img => img.id));
+    const localOnly = state.generatedImages.filter(img => !serverIds.has(img.id));
+    const allImages = [...localOnly, ...images];
+    // Sort by timestamp, newest first
+    allImages.sort((a, b) => b.timestamp - a.timestamp);
+    return { generatedImages: allImages, galleryLoaded: true };
+  }),
   removeGeneratedImage: (id) => set((state) => ({
     generatedImages: state.generatedImages.filter(img => img.id !== id),
   })),
   setGalleryLoading: (galleryLoading) => set({ galleryLoading }),
   setGalleryLoaded: (galleryLoaded) => set({ galleryLoaded }),
+  triggerGalleryRefresh: () => set({ galleryLoaded: false }),
   addPromptHistory: (item) => set((state) => ({
     promptHistory: [item, ...state.promptHistory].slice(0, 50),
   })),

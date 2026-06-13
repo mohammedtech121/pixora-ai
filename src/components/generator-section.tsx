@@ -54,7 +54,7 @@ export function GeneratorSection() {
     showNegativePrompt, setShowNegativePrompt,
     credits, setCredits, deductCredits,
     addGeneratedImage, addPromptHistory,
-    setGalleryLoaded,
+    triggerGalleryRefresh,
   } = useAppStore();
 
   const { user, userData, loading: authLoading } = useAuth();
@@ -249,7 +249,7 @@ export function GeneratorSection() {
         }
 
         // Mark gallery as needing a refresh from server on next visit
-        setGalleryLoaded(false);
+        triggerGalleryRefresh();
 
         // Update credits from server response (source of truth)
         if (data.creditsRemaining !== undefined && data.creditsRemaining !== null) {
@@ -321,7 +321,7 @@ export function GeneratorSection() {
       clearTimeout(timeoutId);
       cleanupGeneration();
     }
-  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, user, addGeneratedImage, addPromptHistory, deductCredits, cleanupGeneration, setIsGenerating, setGenerationProgress, setCredits]);
+  }, [prompt, negativePrompt, selectedStyle, selectedSize, numImages, credits, user, addGeneratedImage, addPromptHistory, deductCredits, cleanupGeneration, setIsGenerating, setGenerationProgress, setCredits, triggerGalleryRefresh]);
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {

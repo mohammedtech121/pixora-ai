@@ -20,13 +20,21 @@ export const metadata: Metadata = {
   keywords: ["AI", "image generation", "art", "creative", "Pixora", "artificial intelligence", "text to image"],
   authors: [{ name: "Pixora.ai" }],
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg?v=2", type: "image/svg+xml" },
+    ],
+    apple: "/favicon.svg?v=2",
   },
   openGraph: {
     title: "Pixora.ai - Create Anything You Can Imagine",
     description: "Premium AI image generation platform with state-of-the-art models",
     siteName: "Pixora.ai",
     type: "website",
+    images: ["/favicon.svg?v=2"],
+  },
+  twitter: {
+    card: "summary",
+    images: ["/favicon.svg?v=2"],
   },
 };
 
