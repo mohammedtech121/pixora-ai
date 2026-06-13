@@ -18,11 +18,13 @@ const STYLE_PRESETS: Record<string, string> = {
 
 const VALID_SIZES = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'];
 
+// Hugging Face Inference API base URL (router.huggingface.co works from Vercel)
+const HF_BASE_URL = 'https://router.huggingface.co/hf-inference/models';
+
 // Hugging Face model fallback chain (free inference API)
 const HF_MODELS = [
   'black-forest-labs/FLUX.1-schnell',
   'stabilityai/stable-diffusion-xl-base-1.0',
-  'runwayml/stable-diffusion-v1-5',
 ];
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -76,7 +78,7 @@ async function generateWithHuggingFace(
       });
 
       const response = await withTimeout(
-        fetch(`https://api-inference.huggingface.co/models/${model}`, {
+        fetch(`${HF_BASE_URL}/${model}`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${hfToken}`,
@@ -106,7 +108,7 @@ async function generateWithHuggingFace(
         await new Promise(resolve => setTimeout(resolve, waitTime));
 
         const retryResponse = await withTimeout(
-          fetch(`https://api-inference.huggingface.co/models/${model}`, {
+          fetch(`${HF_BASE_URL}/${model}`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${hfToken}`,
